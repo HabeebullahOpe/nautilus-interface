@@ -12,6 +12,14 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Typography,
+  Slider,
+  Checkbox,
+  FormControlLabel,
+  IconButton,
+  CircularProgress,
+  Switch,
+  MenuItem,
+  Tooltip,
 } from "@mui/material";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
@@ -35,21 +43,19 @@ import { getSmartTokens } from "../../store/smartTokenSlice";
 //import { getRankings } from "../../utils/mp";
 import Grid2 from "@mui/material/Unstable_Grid2/Grid2";
 import CartNftCard from "../../components/CartNFTCard";
-import { ARC72_INDEXER_API, HIGHFORGE_API } from "../../config/arc72-idx";
+import {
+  ARC72_INDEXER_API,
+  HIGHFORGE_API,
+  NFT_NAVIGATOR_API,
+} from "../../config/arc72-idx";
 import { stripTrailingZeroBytes } from "@/utils/string";
 import { useWallet } from "@txnlab/use-wallet-react";
 import { stakingRewards } from "@/static/staking/staking";
 import LayersIcon from "@mui/icons-material/Layers";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { SearchOutlined } from "@mui/icons-material";
+import { Dialog, DialogContent, DialogTitle } from "@mui/material";
+import { SearchOutlined, Close } from "@mui/icons-material";
 import { useDebounceCallback } from "usehooks-ts";
 import CollectionSelect from "@/components/CollectionSelect";
-import DiamondIcon from "@mui/icons-material/Diamond";
 import { useMarketplaceListings } from "@/hooks/mp";
 import TollIcon from "@mui/icons-material/Toll";
 import NorthEastIcon from "@mui/icons-material/NorthEast";
@@ -58,6 +64,17 @@ import { CONTRACT } from "ulujs";
 import { getAlgorandClients } from "@/wallets";
 import { useName } from "@/hooks/useName";
 import { useEnvoiResolver } from "@/hooks/useEnvoiResolver";
+import { formatUnits } from "viem";
+import { toast } from "react-hot-toast";
+import { mp, abi } from "ulujs";
+import party from "party-js";
+import { TOKEN_WVOI } from "@/contants/tokens";
+import { CTCINFO_MP206_2 } from "@/contants/mp";
+import algosdk from "algosdk";
+import { useNFTDrips } from "@/hooks/useNFTDrips";
+import FilterListIcon from "@mui/icons-material/FilterList";
+import CloseIcon from "@mui/icons-material/Close";
+import { zeroAddress } from "@/contants/accounts";
 
 const PriceRangeContainer = styled.div`
   display: flex;
@@ -221,23 +238,31 @@ const SearchPlaceholderText = styled.input`
 
 const ListingRoot = styled.div`
   display: flex;
-  align-items: flex-start;
-  gap: var(--Main-System-20px, 20px);
-  margin-top: 32px;
-  padding-top: 0px;
+  flex-direction: column;
+  gap: 20px;
+  margin-top: 16px;
+  padding: 0 16px;
+
+  @media (min-width: 1024px) {
+    flex-direction: row;
+    align-items: flex-start;
+    margin-top: 32px;
+    padding: 0;
+  }
 `;
 
 const SidebarFilterRoot = styled(Stack)`
-  display: flex;
-  width: 270px;
-  padding: var(--Main-System-24px, 24px);
-  /*
-  flex-direction: column;
-  align-items: flex-start;
-  */
-  gap: var(--Main-System-24px, 24px);
-  border-radius: var(--Main-System-10px, 10px);
-  flex-shrink: 0;
+  width: 100%;
+  padding: 16px;
+  gap: 16px;
+  border-radius: 10px;
+
+  @media (min-width: 1024px) {
+    width: 270px;
+    padding: 24px;
+    gap: 24px;
+  }
+
   &.dark {
     border: 1px solid #2b2b2b;
     background: #202020;
@@ -249,11 +274,16 @@ const SidebarFilterRoot = styled(Stack)`
 `;
 
 const ListingContainer = styled.div`
-  /*
-  padding-top: 16px;
-*/
   overflow: hidden;
   flex-grow: 1;
+  width: 100%; // Take full width on mobile
+  display: flex;
+  flex-direction: column;
+  align-items: center; // Center content on mobile
+
+  @media (min-width: 1024px) {
+    align-items: stretch; // Reset alignment on desktop
+  }
 `;
 
 const ListingHeading = styled.div`
@@ -315,12 +345,30 @@ const HeadingDescription = styled.div`
 `;
 
 const ListingGrid = styled.div`
-  display: flex;
-  align-items: flex-start;
-  align-content: flex-start;
-  gap: 20px var(--Main-System-20px, 20px);
-  flex-wrap: wrap;
-  margin-top: 48px;
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  margin-top: 24px;
+
+  // Single column on mobile
+  grid-template-columns: 1fr;
+
+  // Two columns on tablets
+  @media (min-width: 640px) {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+
+  // Three columns on larger tablets
+  @media (min-width: 1024px) {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+
+  // Four columns on desktop
+  @media (min-width: 1280px) {
+    grid-template-columns: repeat(4, 1fr);
+  }
 `;
 
 // ------------------------------
@@ -483,7 +531,7 @@ const BannerTitleContainer = styled.div`
   margin-left: 40px;
 `;
 
-const BannerTitle = styled.h1`
+const BannerTitle = styled.h1<{ $isDarkTheme: boolean }>`
   flex: 1 0 0;
   color: #fff;
   leading-trim: both;
@@ -499,39 +547,45 @@ const BannerTitle = styled.h1`
   @media (min-width: 768px) {
     font-size: 40px; // Larger screens
   }
+  z-index: 2;
 `;
 
 const BannerUrlContainer = styled.a`
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(50px);
-  border-radius: 16px;
+  padding: 12px 24px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(10px);
+  border-radius: 100px;
   text-decoration: none;
   color: white;
-  transition: opacity 0.2s;
+  transition: all 0.2s;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 2;
 
   &:hover {
-    opacity: 0.8;
+    background: rgba(0, 0, 0, 0.8);
+    transform: translateY(-2px);
+  }
+
+  @media (max-width: 768px) {
+    width: 100%;
+    justify-content: center;
   }
 `;
 
 const BannerLinksContainer = styled.div`
   display: flex;
   gap: 12px;
-  z-index: 1;
+  z-index: 2;
+  position: relative;
+  margin-top: 24px;
+
   @media (max-width: 768px) {
-    position: absolute;
-    bottom: -105px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: ${(props) =>
-      props.theme.isDarkTheme ? "rgba(0,0,0,0.4)" : "rgba(255,255,255,0.4)"};
-    padding: 12px;
-    border-radius: 16px;
-    backdrop-filter: blur(50px);
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
   }
 `;
 
@@ -543,9 +597,427 @@ const StyledLink = styled(Link)`
   gap: 10px;
 `;
 
+// Make sure this formatter is defined near the top of the file with other constants
 const formatter = Intl.NumberFormat("en", { notation: "compact" });
 
+const HeroSection = styled.div<{ $isDarkTheme: boolean }>`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 16px; // Reduced padding on mobile
+  background-size: cover;
+  background-position: center;
+  position: relative;
+  margin-bottom: 24px; // Reduced margin on mobile
+
+  @media (min-width: 768px) {
+    padding: 48px 24px;
+    margin-bottom: 48px;
+  }
+
+  &::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.7) 0%,
+      rgba(0, 0, 0, 0.5) 50%,
+      rgba(0, 0, 0, 0.3) 100%
+    );
+    z-index: 1;
+  }
+`;
+
+const HeroTitle = styled.h1<{ $isDarkTheme: boolean }>`
+  font-family: Nohemi;
+  font-size: 48px;
+  font-weight: 700;
+  color: #fff;
+  text-align: center;
+  margin-bottom: 16px;
+  position: relative;
+  z-index: 2;
+
+  @media (max-width: 600px) {
+    font-size: 32px;
+  }
+`;
+
+const HeroSubtitle = styled.div<{ $isDarkTheme: boolean }>`
+  font-size: 1.25rem;
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0 auto;
+  line-height: 1.6;
+  text-align: center;
+  padding: 0 24px;
+  max-width: 800px;
+  position: relative;
+  z-index: 2;
+
+  @media (max-width: 600px) {
+    font-size: 1rem;
+  }
+`;
+
+const StatsHighlight = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, 1fr); // 2 columns on mobile
+  gap: 16px;
+  margin-top: 24px;
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  padding: 0 16px;
+
+  @media (min-width: 768px) {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    padding: 0;
+  }
+`;
+
+const StatItem = styled.div<{ $isDarkTheme: boolean }>`
+  text-align: center;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 8px;
+  backdrop-filter: blur(4px);
+
+  .stat-value {
+    font-size: 1.25rem; // Smaller on mobile
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 4px;
+
+    @media (min-width: 768px) {
+      font-size: 1.5rem;
+    }
+  }
+
+  .stat-label {
+    font-size: 0.75rem; // Smaller on mobile
+    color: rgba(255, 255, 255, 0.7);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+
+    @media (min-width: 768px) {
+      font-size: 0.875rem;
+    }
+  }
+`;
+
+// Add new styled component for the modal
+const SweepModal = styled(Dialog)<{ $isDarkTheme: boolean }>`
+  .MuiDialog-paper {
+    background: transparent;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: none;
+  }
+  .MuiDialog-root {
+    max-width: 800px;
+    width: 90%;
+    border-radius: 20px;
+    padding: 24px;
+  }
+
+  .MuiBackdrop-root {
+    background-color: ${(props) =>
+      props.$isDarkTheme ? "rgba(0, 0, 0, 0.7)" : "rgba(255, 255, 255, 0.7)"};
+  }
+`;
+
+const StyledDialogContent = styled(DialogContent)<{ $isDarkTheme: boolean }>`
+  background: ${(props) =>
+    props.$isDarkTheme
+      ? "rgba(40, 40, 40, 0.85)"
+      : "rgba(245, 245, 245, 0.85)"};
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 20px;
+  border: 1px solid
+    ${(props) =>
+      props.$isDarkTheme ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"};
+`;
+
+const SweepModalContent = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+`;
+
+const SweepSliderContainer = styled.div`
+  padding: 0 12px;
+`;
+
+const SweepNFTList = styled.div`
+  max-height: 400px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+`;
+
+const SweepNFTItem = styled.div<{ $isDarkTheme: boolean }>`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  background: ${(props) =>
+    props.$isDarkTheme ? "rgba(60, 60, 60, 0.7)" : "rgba(255, 255, 255, 0.7)"};
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid
+    ${(props) =>
+      props.$isDarkTheme ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"};
+`;
+
+const SweepNFTImage = styled.img<{ $isDarkTheme: boolean }>`
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  object-fit: cover;
+`;
+
+const SweepTotalContainer = styled.div<{ $isDarkTheme: boolean }>`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-radius: 16px;
+  background: ${(props) =>
+    props.$isDarkTheme ? "rgba(60, 60, 60, 0.7)" : "rgba(255, 255, 255, 0.7)"};
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid
+    ${(props) =>
+      props.$isDarkTheme ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"};
+  margin-top: auto;
+`;
+
+// Add these new interfaces above the styled components
+interface TraitCount {
+  [key: string]: {
+    [value: string]: number;
+  };
+}
+
+interface RarityScore {
+  [key: string]: {
+    [value: string]: number;
+  };
+}
+
+interface TokenRarity {
+  tokenId: string;
+  rarityScore: number;
+  traits: {
+    [key: string]: string;
+  };
+  name: string;
+  rank: number;
+}
+
+// Add rarity category type and constants near the top with other interfaces
+type RarityCategory =
+  | "all"
+  | "legendary"
+  | "epic"
+  | "rare"
+  | "uncommon"
+  | "common";
+
+// Update the RARITY_CATEGORIES constant with the new ranges
+const RARITY_CATEGORIES = {
+  legendary: { label: "Legendary", range: [1, 1] },
+  epic: { label: "Epic", range: [2, 9] },
+  rare: { label: "Rare", range: [10, 25] },
+  uncommon: { label: "Uncommon", range: [26, 99] },
+  common: { label: "Common", range: [100, Infinity] },
+} as const;
+
+// Add this new function before the Collection component
+export const calculateRarityData = (tokens: any[]): TokenRarity[] => {
+  // Count occurrences of each trait value
+  const traitCounts: TraitCount = {};
+  const totalTokens = tokens.length;
+
+  tokens.forEach((token) => {
+    try {
+      const metadata = JSON.parse(token.metadata);
+      const properties = metadata.properties || {};
+
+      // Handle properties object format
+      Object.entries(properties).forEach(([traitType, value]) => {
+        const valueStr = value?.toString() || "None";
+
+        if (!traitCounts[traitType]) {
+          traitCounts[traitType] = {};
+        }
+        traitCounts[traitType][valueStr] =
+          (traitCounts[traitType][valueStr] || 0) + 1;
+      });
+    } catch (e) {
+      console.error("Error parsing token metadata:", e);
+    }
+  });
+
+  // Calculate rarity scores
+  const rarityScores: RarityScore = {};
+  Object.entries(traitCounts).forEach(([traitType, valueCounts]) => {
+    rarityScores[traitType] = {};
+    Object.entries(valueCounts).forEach(([value, count]) => {
+      rarityScores[traitType][value] = 1 / (count / totalTokens);
+    });
+  });
+
+  // Calculate total rarity score for each token and sort
+  const rankedTokens = tokens
+    .map((token) => {
+      try {
+        const metadata = JSON.parse(token.metadata);
+        const properties = metadata.properties || {};
+        let totalRarityScore = 0;
+        const traitValues: { [key: string]: string } = {};
+
+        Object.entries(properties).forEach(([traitType, value]) => {
+          const valueStr = value?.toString() || "None";
+          traitValues[traitType] = valueStr;
+          totalRarityScore += rarityScores[traitType]?.[valueStr] || 0;
+        });
+
+        return {
+          tokenId: token.tokenId,
+          rarityScore: totalRarityScore,
+          traits: traitValues,
+          name: metadata.name || `Token #${token.tokenId}`,
+          rank: 0, // Initial placeholder value
+        };
+      } catch (e) {
+        console.error("Error calculating token rarity:", e);
+        return {
+          tokenId: token.tokenId,
+          rarityScore: 0,
+          traits: {},
+          name: `Token #${token.tokenId}`,
+          rank: 0, // Initial placeholder value
+        };
+      }
+    })
+    .sort((a, b) => b.rarityScore - a.rarityScore);
+
+  // Add ranks after sorting (handling ties with same rank)
+  let currentRank = 1;
+  let previousScore = rankedTokens[0]?.rarityScore;
+
+  return rankedTokens.map((token, index) => {
+    if (token.rarityScore < previousScore) {
+      currentRank = index + 1;
+      previousScore = token.rarityScore;
+    }
+    return {
+      ...token,
+      rank: currentRank,
+    };
+  });
+};
+
+// Add this styled component definition
+const MobileFilterToggle = styled.button`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 12px;
+  background: ${(props) => (props.theme.isDarkTheme ? "#2b2b2b" : "#fff")};
+  border: 1px solid
+    ${(props) => (props.theme.isDarkTheme ? "#3b3b3b" : "#eaebf0")};
+  border-radius: 8px;
+  margin-bottom: 16px;
+  color: ${(props) => (props.theme.isDarkTheme ? "#fff" : "#000")};
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: ${(props) => (props.theme.isDarkTheme ? "#3b3b3b" : "#f5f5f5")};
+  }
+
+  @media (min-width: 1024px) {
+    display: none;
+  }
+`;
+
+// Add this new styled component after your other styled components
+const SpecialGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 8px;
+  width: 100%;
+  margin-top: 24px;
+
+  @media (max-width: 768px) {
+    grid-template-columns: repeat(5, 1fr);
+  }
+
+  @media (max-width: 480px) {
+    grid-template-columns: repeat(3, 1fr);
+  }
+`;
+
+const SpecialGridItem = styled.div`
+  aspect-ratio: 1;
+  position: relative;
+  cursor: pointer;
+  transition: transform 0.2s;
+
+  &:hover {
+    transform: scale(1.05);
+  }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 8px;
+  }
+
+  .token-number {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+
+  .price {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+`;
+
 export const Collection: React.FC = () => {
+  const { activeAccount, signTransactions } = useWallet();
+
+  const { drips, loading, error } = useNFTDrips();
+
   /* Theme */
 
   const isDarkTheme = useSelector(
@@ -556,23 +1028,11 @@ export const Collection: React.FC = () => {
 
   const { id } = useParams();
 
+  const getDrips = useMemo(() => {
+    return drips.filter((drip) => Number(drip.collectionId) === Number(id));
+  }, [drips, id]);
+
   const dispatch = useDispatch();
-
-  /* Listings */
-  // const listings = useSelector((state: any) => state.listings.listings);
-  // const listingsStatus = useSelector((state: any) => state.listings.status);
-  // useEffect(() => {
-  //   dispatch(getListings() as unknown as UnknownAction);
-  // }, [dispatch]);
-
-  const listCollectionIds: number[] = useMemo(() => [id].map(Number), [id]);
-
-  /* Tokens */
-  // const tokens = useSelector((state: any) => state.tokens.tokens);
-  // const tokenStatus = useSelector((state: any) => state.tokens.status);
-  // useEffect(() => {
-  //   dispatch(getTokens() as unknown as UnknownAction);
-  // }, [dispatch]);
 
   /* Smart Tokens */
   const smartTokens = useSelector((state: any) => state.smartTokens.tokens);
@@ -621,16 +1081,15 @@ export const Collection: React.FC = () => {
   const [collectionInfo, setCollectionInfo] = React.useState<any>(null);
   useEffect(() => {
     try {
-      axios
-        .get(`${HIGHFORGE_API}/projects/info/${id}`)
-        .then((res: any) => res.data)
-        .then(setCollectionInfo);
+      axios.get(`${HIGHFORGE_API}/projects/info/${id}`).then((res: any) => {
+        if (res.status === 200) {
+          setCollectionInfo(res.data);
+        }
+      });
     } catch (e) {
       console.log(e);
     }
   }, [id]);
-
-  console.log("collectionInfo", collectionInfo);
 
   const { fetchCollectionName, fetchText } = useName();
 
@@ -678,13 +1137,74 @@ export const Collection: React.FC = () => {
     });
   }, [normalListings]);
 
+  // Add new state to track purchased listing IDs
+  const [purchasedListingIds, setPurchasedListingIds] = useState<Set<string>>(
+    new Set()
+  );
+
+  // Add ceiling state near the other price-related states (before filteredListings)
+  const [ceiling, setCeiling] = useState<string>("");
+  const debouncedCeiling = useDebounceCallback(setCeiling, 500);
+
+  // Add new state for owned filter near other state declarations
+  const [showOwned, setShowOwned] = useState(false);
+
+  // Add this with your other useState declarations
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+
+  // Replace the existing rarity range state with category state
+  const [rarityCategory, setRarityCategory] = useState<RarityCategory>("all");
+
+  const [collectionTokens, setCollectionTokens] = useState<any[]>([]);
+  const [isLoadingTokens, setIsLoadingTokens] = useState(false);
+  const [tokenError, setTokenError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!id) return;
+    const fetchTokens = async () => {
+      setIsLoadingTokens(true);
+      setTokenError(null);
+      try {
+        const response = await getCollectionTokens(id);
+        setCollectionTokens(
+          (response.tokens || []).filter(
+            (token: any) => !!token.metadata && token.owner !== zeroAddress
+          )
+        );
+      } catch (error) {
+        console.error("Failed to fetch collection tokens:", error);
+        setTokenError("Failed to load collection tokens");
+      } finally {
+        setIsLoadingTokens(false);
+      }
+    };
+    fetchTokens();
+  }, [id]);
+
+  const [showRarity, setShowRarity] = useState(true);
+  const [rarityData, setRarityData] = useState<TokenRarity[]>([]);
+  useEffect(() => {
+    if (collectionTokens.length > 0 || showRarity) {
+      const rarity = calculateRarityData(collectionTokens);
+      setRarityData(rarity);
+    }
+  }, [collectionTokens, showRarity]);
+
+  // Modify the filteredListings useMemo to use category filtering
   const filteredListings = useMemo(() => {
+    // First, process all listings with search and filtering logic
     const listings = sortedListings?.map((listing: ListingI) => {
       const nft = listing.token;
       const metadata = JSON.parse(`${nft?.metadata}`);
       const properties = metadata?.properties || {};
       const traitKeys = Object.keys(properties).join("").toLowerCase();
       const traitValues = Object.values(properties).join("").toLowerCase();
+
+      // Find rarity data for this token
+      const rarity = rarityData.find(
+        (token) => token.tokenId === listing.token.tokenId
+      );
+
       let relevancy = 0;
       do {
         if (search) {
@@ -713,153 +1233,107 @@ export const Collection: React.FC = () => {
           }
         }
       } while (0);
+
       return {
         ...listing,
         relevancy,
+        rarity,
       };
     });
+
+    // Filter listings based on all criteria including rarity category
+    const filteredBySearch = listings?.filter((el: any) => {
+      // Basic check for required filters
+      if (
+        !el ||
+        purchasedListingIds.has(`${el.mpContractId}-${el.mpListingId}`)
+      ) {
+        return false;
+      }
+
+      // Currency and collection filters
+      if (
+        (`${currency}` !== "" &&
+          !currency.split(",").map(Number).includes(el.currency)) ||
+        (`${collection}` !== "" && `${collection}` !== `${el.collectionId}`)
+      ) {
+        return false;
+      }
+
+      // Price filters
+      const price = el.price / 1e6;
+      if (
+        price < (min ? parseInt(min) : 0) ||
+        price > (max ? parseInt(max) : Number.MAX_SAFE_INTEGER) ||
+        (ceiling && price > parseInt(ceiling))
+      ) {
+        return false;
+      }
+
+      // Search relevancy
+      if (search !== "" && el.relevancy <= 0) {
+        return false;
+      }
+
+      // Ownership filter
+      if (
+        showOwned &&
+        (!activeAccount || el.token.owner !== activeAccount.address)
+      ) {
+        return false;
+      }
+
+      // Rarity category filter
+      if (rarityCategory !== "all" && el.rarity) {
+        const categoryRange = RARITY_CATEGORIES[rarityCategory].range;
+        return (
+          el.rarity.rank >= categoryRange[0] &&
+          el.rarity.rank <= categoryRange[1]
+        );
+      }
+
+      return true;
+    });
+
+    // Group listings by collectionId and tokenId, keeping only the most recent listing
+    const groupedListings = filteredBySearch?.reduce(
+      (acc: any, listing: any) => {
+        const key = `${listing.collectionId}-${listing.tokenId}`;
+        if (!acc[key] || listing.mpListingId > acc[key].mpListingId) {
+          acc[key] = listing;
+        }
+        return acc;
+      },
+      {}
+    );
+
+    // Convert back to array and sort
+    const uniqueListings = Object.values(groupedListings);
+
+    // Apply final sorting
     if (search === "") {
-      listings?.sort((a: any, b: any) => b.round - a.round);
-      return listings.filter(
-        (el: any) =>
-          (`${currency}` === "" ||
-            currency.split(",").map(Number).includes(el.currency)) &&
-          (`${collection}` === "" ||
-            `${collection}` === `${el.collectionId}`) &&
-          el.price / 1e6 >= (min ? parseInt(min) : 0) &&
-          el.price / 1e6 <= (max ? parseInt(max) : Number.MAX_SAFE_INTEGER)
-      );
+      return uniqueListings.sort((a: any, b: any) => b.round - a.round);
     } else {
-      listings?.sort((a: any, b: any) => b.relevancy - a.relevancy);
-      return listings?.filter(
-        (el: any) =>
-          (`${currency}` === "" ||
-            currency.split(",").map(Number).includes(el.currency)) &&
-          (`${collection}` === "" ||
-            `${collection}` === `${el.collectionId}`) &&
-          el.relevancy > 0 &&
-          el.price / 1e6 >= (min ? parseInt(min) : 0) &&
-          el.price / 1e6 <= (max ? parseInt(max) : Number.MAX_SAFE_INTEGER)
-      );
+      return uniqueListings.sort((a: any, b: any) => b.relevancy - a.relevancy);
     }
-  }, [sortedListings, search, min, max, currency, collection]);
+  }, [
+    sortedListings,
+    search,
+    min,
+    max,
+    ceiling,
+    currency,
+    collection,
+    purchasedListingIds,
+    showOwned,
+    activeAccount,
+    rarityCategory, // Updated dependency
+    rarityData,
+  ]);
 
   const [viewMode, setViewMode] = React.useState<"grid" | "list">("grid");
 
-  // const stats: any = useMemo(() => {
-  //   if (
-  //     //tokenStatus !== "succeeded" ||
-  //     //listingsStatus !== "succeeded" ||
-  //     salesStatus !== "succeeded" ||
-  //     collectionStatus !== "succeeded" ||
-  //     smartTokenStatus !== "succeeded" ||
-  //     //!tokens ||
-  //     !collections ||
-  //     !sales ||
-  //     //!listings ||
-  //     !smartTokens
-  //   )
-  //     return null;
-  //   const rankings = getRankings(
-  //     //tokens,
-  //     collections,
-  //     sales,
-  //     listings,
-  //     1,
-  //     smartTokens
-  //   );
-  //   return rankings.find((el: RankingI) => `${el.collectionId}` === `${id}`);
-  // }, [
-  //   sales,
-  //   tokens,
-  //   collections,
-  //   //listings,
-  //   smartTokens,
-  //   id,
-  //   tokenStatus,
-  //   //listingsStatus,
-  //   salesStatus,
-  //   collectionStatus,
-  //   smartTokenStatus,
-  // ]);
-
-  // const [tokenPrices, setTokenPrices] = React.useState<Map<number, string>>();
-  // useEffect(() => {
-  //   const tokenPrices = new Map();
-  //   for (const token of smartTokens) {
-  //     if (!token?.price) {
-  //       tokenPrices.set(token.contractId, token?.price || "0");
-  //     }
-  //   }
-  //   setTokenPrices(tokenPrices);
-  // }, [smartTokens]);
-
-  // const normalListings = useMemo(() => {
-  //   if (!listings || !exchangeRate) return [];
-  //   return listings.map((listing: ListingI) => {
-  //     return {
-  //       ...listing,
-  //       normalPrice:
-  //         listing.currency === 0 ? listing.price : listing.price * exchangeRate,
-  //     };
-  //   });
-  // }, [listings, exchangeRate]);
-
   const nfts: any[] = [];
-  // const nfts = useMemo(() => {
-  //   return tokens?.filter((token: any) => `${token.contractId}` === `${id}`);
-  // }, [tokens]);
-
-  // const listedNfts = useMemo(() => {
-  //   const listedNfts =
-  //     nfts
-  //       ?.filter((nft: any) => {
-  //         return normalListings?.some(
-  //           (listing: any) =>
-  //             `${listing.collectionId}` === `${nft.contractId}` &&
-  //             `${listing.tokenId}` === `${nft.tokenId}`
-  //         );
-  //       })
-  //       ?.map((nft: any) => {
-  //         const listing = normalListings.find(
-  //           (l: any) =>
-  //             `${l.collectionId}` === `${nft.contractId}` &&
-  //             `${l.tokenId}` === `${nft.tokenId}`
-  //         );
-  //         return {
-  //           ...nft,
-  //           listing,
-  //         };
-  //       }) || [];
-  //   listedNfts.sort(
-  //     (a: any, b: any) => a.listing.normalPrice - b.listing.normalPrice
-  //   );
-  //   return listedNfts;
-  // }, [nfts, normalListings]);
-
-  // const listedCollections = useMemo(() => {
-  //   const listedCollections =
-  //     collections
-  //       ?.filter((c: any) => {
-  //         return listedNfts?.some(
-  //           (nft: any) => `${nft.contractId}` === `${c.contractId}`
-  //         );
-  //       })
-  //       .map((c: any) => {
-  //         return {
-  //           ...c,
-  //           tokens: listedNfts?.filter(
-  //             (nft: any) => `${nft.contractId}` === `${c.contractId}`
-  //           ),
-  //         };
-  //       }) || [];
-  //   listedCollections.sort(
-  //     (a: any, b: any) =>
-  //       b.tokens[0].listing.createTimestamp -
-  //       a.tokens[0].listing.createTimestamp
-  //   );
-  //   return listedCollections;
-  // }, [collections, listedNfts]);
 
   const collectionSales = useMemo(() => {
     return (
@@ -869,44 +1343,41 @@ export const Collection: React.FC = () => {
 
   const isLoading = useMemo(
     () =>
-      //tokenStatus !== "succeeded" ||
-      //listingsStatus !== "succeeded" ||
       salesStatus !== "succeeded" ||
       collectionStatus !== "succeeded" ||
       smartTokenStatus !== "succeeded" ||
-      //!tokens ||
       !collectionSales ||
       !collections ||
-      //!nfts ||
-      //!listings ||
-      //!listedNfts ||
-      //!listedCollections ||
       !sales,
-    [
-      collections,
-      nfts,
-      //listings,
-      //listedNfts, listedCollections,
-      //stats,
-    ]
+    [collections, nfts]
   );
 
   const [collectionNfts, setCollectionNfts] = React.useState<any[]>([]);
   useEffect(() => {
     try {
       axios
-        .get(`${ARC72_INDEXER_API}/nft-indexer/v1/tokens`, {
-          params: {
-            contractId: id,
-          },
-        })
+        .get(
+          id !== "421076"
+            ? `https://arc72-voi-mainnet.nftnavigator.xyz/nft-indexer/v1/tokens`
+            : `${ARC72_INDEXER_API}/nft-indexer/v1/tokens`,
+          {
+            params: {
+              contractId: id,
+            },
+          }
+        )
         .then(({ data }) => {
-          setCollectionNfts(data.tokens);
+          setCollectionNfts(
+            data.tokens.filter(
+              (token: any) => !!token.metadata && token.owner !== zeroAddress
+            )
+          );
         });
     } catch (e) {
       console.log(e);
     }
   }, [id]);
+  console.log({ collectionNfts });
 
   const displayCoverImage = useMemo(() => {
     if (collectionInfo?.project?.coverImageURL)
@@ -915,10 +1386,12 @@ export const Collection: React.FC = () => {
     return collectionInfo?.project?.coverImageURL ||
       (collectionNfts[0]?.metadata?.image || "").indexOf("ipfs") > -1
       ? collectionNfts[0]?.metadata?.image
-      : `https://ipfs.io/ipfs/${JSON.parse(
-          collectionNfts[0]?.metadata
-        )?.image.slice(7)}`;
+      : `https://ipfs.io/ipfs/${(
+          JSON.parse(collectionNfts[0]?.metadata || "{}")?.image || ""
+        ).slice(7)}`;
   }, [collectionInfo, collectionNfts]);
+
+  console.log({ displayCoverImage, collectionNfts });
 
   // TODO use name
   const displayCollectionName = useMemo(() => {
@@ -933,9 +1406,7 @@ export const Collection: React.FC = () => {
 
   const navigate = useNavigate();
 
-  const { activeAccount } = useWallet();
-
-  const resolver = useEnvoiResolver();
+  const { resolver } = useEnvoiResolver();
   const [collectionProfile, setCollectionProfile] = React.useState<any>(null);
   useEffect(() => {
     if (!id) return;
@@ -948,26 +1419,10 @@ export const Collection: React.FC = () => {
           setCollectionProfile(results[0]);
         }
       });
-      /*
-      fetchText(name, "url").then((text: string) => {
-        const sanitizeText = (text: string) => {
-          return stripTrailingZeroBytes(text);
-        };
-        setCollectionUrl(sanitizeText(text));
-      });
-      fetchText(name, "com.twitter").then((text: string) => {
-        const sanitizeText = (text: string) => {
-          return text
-            .replace(/https?:\/\//, "")
-            .replace(/@/g, "")
-            .replace(/#/g, "")
-            .replace(/ /g, "");
-        };
-        setCollectionTwitter(sanitizeText(text));
-      });
-      */
     });
   }, [id]);
+
+  console.log({ collectionProfile });
 
   const [accounts, setAccounts] = React.useState<any[]>([]);
   React.useEffect(() => {
@@ -1020,296 +1475,821 @@ export const Collection: React.FC = () => {
     }
   };
 
+  const [hasNFTNavigatorData, setHasNFTNavigatorData] = useState(false);
+
+  // Add effect to check NFT Navigator data
+  useEffect(() => {
+    if (!id) return;
+    axios
+      .get(
+        `https://arc72-voi-mainnet.nftnavigator.xyz/nft-indexer/v1/collections?includes=unique-owners&contractId=${id}`
+      )
+      .then(({ data }) => {
+        setHasNFTNavigatorData(data.collections && data.collections.length > 0);
+      })
+      .catch(() => {
+        setHasNFTNavigatorData(false);
+      });
+  }, [id]);
+
+  const [isSweepModalOpen, setIsSweepModalOpen] = useState(false);
+  const [selectedCount, setSelectedCount] = useState(1);
+
+  const [isPurchasePending, setIsPurchasePending] = useState(false);
+
+  const handleSweepPurchase = async () => {
+    if (!activeAccount) {
+      alert("Please connect wallet!");
+      return;
+    }
+
+    setIsPurchasePending(true);
+    try {
+      const { algodClient, indexerClient } = getAlgorandClients();
+
+      const defaultPaymentToken = {
+        contractId: 390001,
+        name: "Wrapped Voi",
+        symbol: "wVOI",
+        decimals: 6,
+        tokenId: "0",
+      };
+
+      const ci = new CONTRACT(
+        CTCINFO_MP206_2,
+        algodClient,
+        indexerClient,
+        abi.custom,
+        { addr: activeAccount.address, sk: new Uint8Array(0) }
+      );
+
+      // Get the listings to purchase
+      const listingsToPurchase = filteredListings.slice(0, selectedCount);
+
+      // Process each listing sequentially
+      const simTxns: any[] = [];
+      //for (const listing of listingsToPurchase) {
+      for (let i = 0; i < listingsToPurchase.length; i++) {
+        const listing: any = listingsToPurchase[i];
+        try {
+          // Verify listing is still available
+          const ci = new CONTRACT(
+            listing.mpContractId,
+            algodClient,
+            indexerClient,
+            {
+              name: "",
+              desc: "",
+              methods: [
+                {
+                  name: "v_sale_listingByIndex",
+                  args: [{ type: "uint256" }],
+                  readonly: true,
+                  returns: {
+                    type: "(uint64,uint256,address,(byte,byte[40]),uint64,uint64,uint64,uint64,uint64,uint64,address,address,address)",
+                  },
+                },
+              ],
+              events: [],
+            },
+            { addr: activeAccount.address, sk: new Uint8Array(0) }
+          );
+
+          const v_sale_listingByIndexR = await ci.v_sale_listingByIndex(
+            listing.mpListingId
+          );
+          if (!v_sale_listingByIndexR.success) {
+            throw new Error("Failed to get listing");
+          }
+
+          const v_sale_listingByIndex = v_sale_listingByIndexR.returnValue;
+          if (v_sale_listingByIndex[1] === BigInt(0)) {
+            throw new Error("Listing no longer available");
+          }
+
+          // Attempt purchase with and without skipEnsure
+          let customR;
+          for (const skipEnsure of [true, false]) {
+            customR = await mp.buy(
+              activeAccount.address,
+              { ...listing, price: listing.price + i },
+              defaultPaymentToken,
+              {
+                paymentTokenId:
+                  listing.currency === 0 ? TOKEN_WVOI : listing.currency,
+                wrappedNetworkTokenId: TOKEN_WVOI,
+                extraTxns: [],
+                algodClient,
+                indexerClient,
+                skipEnsure,
+                strategy: "default",
+                //skipFundCollection: true,
+                paymentOffset: i,
+              }
+            );
+            console.log({ customR });
+            if (customR.success) break;
+          }
+
+          if (!customR.success) throw new Error("Purchase failed");
+
+          simTxns.push(customR);
+        } catch (e: any) {
+          console.error(`Failed to purchase NFT #${listing.tokenId}:`, e);
+          toast.error(
+            `Failed to purchase NFT #${listing.tokenId}: ${e.message}`
+          );
+        }
+      }
+
+      console.log({ simTxns });
+      ci.setFee(100000);
+      ci.setEnableGroupResourceSharing(true);
+      ci.setTransfers([
+        [28500 * simTxns.length, algosdk.getApplicationAddress(Number(id))],
+      ]);
+      const extraTxns = [...simTxns.map((txn) => txn.objs)];
+      ci.setExtraTxns(extraTxns.flat());
+      const customR = await ci.custom();
+      console.log({ customR });
+
+      if (!customR.success) throw new Error("Purchase failed");
+
+      // Sign and send transaction
+      const stxn = await signTransactions(
+        customR.txns.map(
+          (txn: string) => new Uint8Array(Buffer.from(txn, "base64"))
+        )
+      );
+      const res = await algodClient
+        .sendRawTransaction(stxn as Uint8Array[])
+        .do();
+      console.log({ res });
+
+      // After successful purchase, update the purchasedListingIds
+      const newPurchasedIds = new Set(purchasedListingIds);
+      listingsToPurchase.forEach((listing) => {
+        newPurchasedIds.add(`${listing.mpContractId}-${listing.mpListingId}`);
+      });
+      setPurchasedListingIds(newPurchasedIds);
+
+      setIsPurchasePending(false);
+      setIsSweepModalOpen(false);
+      setSelectedCount(1);
+
+      // Enhanced party effect
+      const button = document.querySelector("button");
+      if (button) {
+        // First burst of confetti
+        party.confetti(button, {
+          count: party.variation.range(40, 60),
+          size: party.variation.range(1, 1.5),
+          speed: party.variation.range(300, 500),
+          spread: 50,
+          shapes: ["square", "circle", "star"],
+        });
+
+        // Second burst after a small delay
+        setTimeout(() => {
+          party.confetti(button, {
+            count: party.variation.range(30, 50),
+            size: party.variation.range(0.8, 1.2),
+            speed: party.variation.range(200, 400),
+            spread: 40,
+          });
+        }, 200);
+      }
+
+      // Success notification
+      toast.success(
+        `🎉 Successfully purchased ${selectedCount} NFTs! Welcome to the collection!`,
+        {
+          duration: 5000,
+          style: {
+            background: "#10B981",
+            color: "#fff",
+            fontSize: "16px",
+            padding: "16px",
+            borderRadius: "8px",
+          },
+        }
+      );
+    } catch (e: any) {
+      console.error("Sweep purchase failed:", e);
+      toast.error(`Sweep purchase failed: ${e.message}`);
+      setIsPurchasePending(false);
+    }
+  };
+
   const renderSidebar = (
-    <SidebarFilterRoot
-      className={`${isDarkTheme ? "dark" : "light"} p-3  md:!block `}
-      // sx={{
-      //   display: { xs: "none", md: "block" },
-      // }}
-    >
-      <SearchContainer className="">
-        <SearchInput className={isDarkTheme ? "dark" : "light"}>
-          <SearchIcon
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 16 16"
-            fill="none"
-          >
-            <g clip-path="url(#clip0_1018_4041)">
-              <path
-                d="M14.6673 14.6667L11.6673 11.6667M13.334 7.33333C13.334 10.647 10.6477 13.3333 7.33398 13.3333C4.02028 13.3333 1.33398 10.647 1.33398 7.33333C1.33398 4.01962 4.02028 1.33333 7.33398 1.33333C10.6477 1.33333 13.334 4.01962 13.334 7.33333Z"
-                stroke="#68727D"
-                strokeWidth="1.77778"
-                strokeLinecap="round"
-              />
-            </g>
-            <defs>
-              <clipPath id="clip0_1018_4041">
-                <rect width="16" height="16" fill="white" />
-              </clipPath>
-            </defs>
-          </SearchIcon>
-          <SearchPlaceholderText
-            type="text"
-            className={[
-              search ? "has-value" : "",
-              isDarkTheme ? "dark" : "light",
-            ].join(" ")}
-            placeholder="Search"
-            value={searchValue}
-            onChange={(e) => {
-              if (e.target.value === "") {
-                setSearch("");
-                setSearchValue("");
-              }
-              debouncedSearch(e.target.value);
-              setSearchValue(e.target.value);
-            }}
-          />
-        </SearchInput>
-      </SearchContainer>
-      <SidebarFilterContainer>
-        <SidebarFilter>
-          <Stack
-            direction="row"
-            sx={{
-              justifyContent: "flex-start",
-              width: "100%",
-              gap: "12px",
-            }}
-          >
-            <svg
+    <>
+      <MobileFilterToggle
+        onClick={() => setShowMobileFilters(!showMobileFilters)}
+        style={{
+          background: isDarkTheme ? "#2b2b2b" : "#fff",
+          borderColor: isDarkTheme ? "#3b3b3b" : "#eaebf0",
+          color: isDarkTheme ? "#fff" : "#000",
+        }}
+      >
+        <FilterListIcon />
+        <span style={{ marginLeft: 8 }}>Filters</span>
+      </MobileFilterToggle>
+
+      <SidebarFilterRoot
+        className={`${isDarkTheme ? "dark" : "light"}`}
+        sx={{
+          display: {
+            xs: showMobileFilters ? "block" : "none",
+            lg: "block",
+          },
+          position: {
+            xs: "fixed",
+            lg: "static",
+          },
+          top: { xs: 0 },
+          left: { xs: 0 },
+          right: { xs: 0 },
+          bottom: { xs: 0 },
+          zIndex: { xs: 1000 },
+          overflowY: { xs: "auto" },
+          background: isDarkTheme ? "#202020" : "#fff",
+        }}
+      >
+        {/* Add close button for mobile */}
+        <IconButton
+          sx={{
+            display: { xs: "flex", lg: "none" },
+            position: "absolute",
+            right: 8,
+            top: 8,
+          }}
+          onClick={() => setShowMobileFilters(false)}
+        >
+          <CloseIcon />
+        </IconButton>
+
+        <SearchContainer className="">
+          <SearchInput className={isDarkTheme ? "dark" : "light"}>
+            <SearchIcon
               xmlns="http://www.w3.org/2000/svg"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
               fill="none"
             >
-              <path
-                d="M8.5 14.6667C8.5 15.9553 9.54467 17 10.8333 17H13C14.3807 17 15.5 15.8807 15.5 14.5C15.5 13.1193 14.3807 12 13 12H11C9.61929 12 8.5 10.8807 8.5 9.5C8.5 8.11929 9.61929 7 11 7H13.1667C14.4553 7 15.5 8.04467 15.5 9.33333M12 5.5V7M12 17V18.5M22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12Z"
-                stroke={isDarkTheme ? "white" : "black"}
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            <SidebarLabel className={isDarkTheme ? "dark" : "light"}>
-              Price
-            </SidebarLabel>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
+              <g clip-path="url(#clip0_1018_4041)">
+                <path
+                  d="M14.6673 14.6667L11.6673 11.6667M13.334 7.33333C13.334 10.647 10.6477 13.3333 7.33398 13.3333C4.02028 13.3333 1.33398 10.647 1.33398 7.33333C1.33398 4.01962 4.02028 1.33333 7.33398 1.33333C10.6477 1.33333 13.334 4.01962 13.334 7.33333Z"
+                  stroke="#68727D"
+                  strokeWidth="1.77778"
+                  strokeLinecap="round"
+                />
+              </g>
+              <defs>
+                <clipPath id="clip0_1018_4041">
+                  <rect width="16" height="16" fill="white" />
+                </clipPath>
+              </defs>
+            </SearchIcon>
+            <SearchPlaceholderText
+              type="text"
+              className={[
+                search ? "has-value" : "",
+                isDarkTheme ? "dark" : "light",
+              ].join(" ")}
+              placeholder="Search"
+              value={searchValue}
+              onChange={(e) => {
+                if (e.target.value === "") {
+                  setSearch("");
+                  setSearchValue("");
+                }
+                debouncedSearch(e.target.value);
+                setSearchValue(e.target.value);
+              }}
+            />
+          </SearchInput>
+        </SearchContainer>
+        <SidebarFilterContainer>
+          <SidebarFilter>
+            <Stack
+              direction="row"
+              sx={{
+                justifyContent: "flex-start",
+                width: "100%",
+                gap: "12px",
+              }}
             >
-              <path
-                d="M5 12H19"
-                stroke={isDarkTheme ? "white" : "black"}
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </Stack>
-          {/*<TokenSelect
-            filter={(t: TokenType) => listCurencies.includes(t.contractId)}
-            onChange={(newValue: any) => {
-              if (!newValue) {
-                setCurrency("");
-                return;
-              }
-              const currency = `${newValue?.contractId || "0"}`;
-              if (currency === "0") {
-                const CTC_INFO_WVOI = 34099056;
-                setCurrency(`0,${CTC_INFO_WVOI}`);
-              } else {
-                setCurrency(`${newValue?.contractId}`);
-              }
-            }}
-          />*/}
-          <PriceRangeContainer>
-            <Min>
-              <MinInputContainer className={isDarkTheme ? "dark" : "light"}>
-                <MinInputLabelContainer>
-                  <input
-                    placeholder="Min"
-                    onChange={(e) => {
-                      if (
-                        e.target.value === "" &&
-                        isNaN(parseInt(e.target.value))
-                      )
-                        return;
-                      debouncedMin(e.target.value);
-                    }}
-                    style={{
-                      color: isDarkTheme ? "white" : "black",
-                      width: "100%",
-                    }}
-                    type="text"
-                  />
-                </MinInputLabelContainer>
-              </MinInputContainer>
-            </Min>
-            <To>to</To>
-            <Min>
-              <MinInputContainer className={isDarkTheme ? "dark" : "light"}>
-                <MinInputLabelContainer>
-                  <input
-                    placeholder="Max"
-                    onChange={(e) => {
-                      if (
-                        e.target.value !== "" &&
-                        isNaN(parseInt(e.target.value))
-                      )
-                        return;
-                      debouncedMax(e.target.value);
-                    }}
-                    style={{
-                      color: isDarkTheme ? "white" : "black",
-                      width: "100%",
-                    }}
-                    type="text"
-                  />
-                </MinInputLabelContainer>
-              </MinInputContainer>
-            </Min>
-          </PriceRangeContainer>
-        </SidebarFilter>
-      </SidebarFilterContainer>
-      {/** Staking Filters  **/}
-      {/*<SidebarFilterContainer>
-        <SidebarFilter>
-          <Stack
-            direction="row"
-            sx={{
-              justifyContent: "flex-start",
-              width: "100%",
-              gap: "12px",
-            }}
-          >
-            <SidebarLabel className={isDarkTheme ? "dark" : "light"}>
-              Lockup
-            </SidebarLabel>
-          </Stack>
-          <Stack direction="row" gap={1}>
-            <Paper>
-              <ToggleButtonGroup
-                fullWidth
-                orientation="horizontal"
-                value={lockups}
-                onChange={handleLockups}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
               >
-                {[0, 1, 2, 3, 4, 5].map((year) => (
-                  <ToggleButton value={year}>
-                    <Typography variant="body2" color="textSecondary">
-                      {year}
-                    </Typography>
-                  </ToggleButton>
+                <path
+                  d="M8.5 14.6667C8.5 15.9553 9.54467 17 10.8333 17H13C14.3807 17 15.5 15.8807 15.5 14.5C15.5 13.1193 14.3807 12 13 12H11C9.61929 12 8.5 10.8807 8.5 9.5C8.5 8.11929 9.61929 7 11 7H13.1667C14.4553 7 15.5 8.04467 15.5 9.33333M12 5.5V7M12 17V18.5M22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12 2C17.5228 2 22 6.47715 22 12Z"
+                  stroke={isDarkTheme ? "white" : "black"}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <SidebarLabel className={isDarkTheme ? "dark" : "light"}>
+                Price
+              </SidebarLabel>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+              >
+                <path
+                  d="M5 12H19"
+                  stroke={isDarkTheme ? "white" : "black"}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </Stack>
+            {/*<TokenSelect
+              filter={(t: TokenType) => listCurencies.includes(t.contractId)}
+              onChange={(newValue: any) => {
+                if (!newValue) {
+                  setCurrency("");
+                  return;
+                }
+                const currency = `${newValue?.contractId || "0"}`;
+                if (currency === "0") {
+                  const CTC_INFO_WVOI = 34099056;
+                  setCurrency(`0,${CTC_INFO_WVOI}`);
+                } else {
+                  setCurrency(`${newValue?.contractId}`);
+                }
+              }}
+            />*/}
+            <PriceRangeContainer>
+              <Min>
+                <MinInputContainer className={isDarkTheme ? "dark" : "light"}>
+                  <MinInputLabelContainer>
+                    <input
+                      placeholder="Min"
+                      onChange={(e) => {
+                        if (
+                          e.target.value === "" &&
+                          isNaN(parseInt(e.target.value))
+                        )
+                          return;
+                        debouncedMin(e.target.value);
+                      }}
+                      style={{
+                        color: isDarkTheme ? "white" : "black",
+                        width: "100%",
+                      }}
+                      type="text"
+                    />
+                  </MinInputLabelContainer>
+                </MinInputContainer>
+              </Min>
+              <To>to</To>
+              <Min>
+                <MinInputContainer className={isDarkTheme ? "dark" : "light"}>
+                  <MinInputLabelContainer>
+                    <input
+                      placeholder="Max"
+                      onChange={(e) => {
+                        if (
+                          e.target.value !== "" &&
+                          isNaN(parseInt(e.target.value))
+                        )
+                          return;
+                        debouncedMax(e.target.value);
+                      }}
+                      style={{
+                        color: isDarkTheme ? "white" : "black",
+                        width: "100%",
+                      }}
+                      type="text"
+                    />
+                  </MinInputLabelContainer>
+                </MinInputContainer>
+              </Min>
+            </PriceRangeContainer>
+            {/* Add ceiling input */}
+            <PriceRangeContainer>
+              <Min>
+                <MinInputContainer className={isDarkTheme ? "dark" : "light"}>
+                  <MinInputLabelContainer>
+                    <input
+                      placeholder="Ceiling"
+                      onChange={(e) => {
+                        if (
+                          e.target.value !== "" &&
+                          isNaN(parseInt(e.target.value))
+                        )
+                          return;
+                        debouncedCeiling(e.target.value);
+                      }}
+                      style={{
+                        color: isDarkTheme ? "white" : "black",
+                        width: "100%",
+                      }}
+                      type="text"
+                    />
+                  </MinInputLabelContainer>
+                </MinInputContainer>
+              </Min>
+            </PriceRangeContainer>
+          </SidebarFilter>
+        </SidebarFilterContainer>
+        {/** Staking Filters  **/}
+        {/*<SidebarFilterContainer>
+          <SidebarFilter>
+            <Stack
+              direction="row"
+              sx={{
+                justifyContent: "flex-start",
+                width: "100%",
+                gap: "12px",
+              }}
+            >
+              <SidebarLabel className={isDarkTheme ? "dark" : "light"}>
+                Lockup
+              </SidebarLabel>
+            </Stack>
+            <Stack direction="row" gap={1}>
+              <Paper>
+                <ToggleButtonGroup
+                  fullWidth
+                  orientation="horizontal"
+                  value={lockups}
+                  onChange={handleLockups}
+                >
+                  {[0, 1, 2, 3, 4, 5].map((year) => (
+                    <ToggleButton value={year}>
+                      <Typography variant="body2" color="textSecondary">
+                        {year}
+                      </Typography>
+                    </ToggleButton>
+                  ))}
+                </ToggleButtonGroup>
+              </Paper>
+              <Box sx={{ display: "flex", alignItems: "center" }}>
+                <Typography
+                  variant="body2"
+                  color="textSecondary"
+                  sx={{
+                    color: isDarkTheme ? "white" : "black",
+                  }}
+                >
+                  Years
+                </Typography>
+              </Box>
+            </Stack>
+          </SidebarFilter>
+        </SidebarFilterContainer>*/}
+        {/*<SidebarFilterContainer>
+          <SidebarFilter>
+            <Stack
+              direction="row"
+              sx={{
+                justifyContent: "flex-start",
+                width: "100%",
+                gap: "12px",
+              }}
+            >
+              <LayersIcon />
+              <SidebarLabel className={isDarkTheme ? "dark" : "light"}>
+                Collection
+              </SidebarLabel>
+             
+            </Stack>
+            <CollectionSelect
+              filter={(c: any) => {
+                return listCollectionIds.includes(c.contractId);
+              }}
+              onChange={(newValue: any) => {
+                if (!newValue) {
+                  setCollection("");
+                  return;
+                }
+                setCollection(`${newValue?.contractId}`);
+              }}
+            />
+          </SidebarFilter>
+        </SidebarFilterContainer>*/}
+        <SidebarFilterContainer>
+          <SidebarFilter>
+            <Stack
+              direction="row"
+              sx={{
+                justifyContent: "flex-start",
+                width: "100%",
+                gap: "12px",
+              }}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+              >
+                <path
+                  d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"
+                  stroke={isDarkTheme ? "white" : "black"}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <SidebarLabel className={isDarkTheme ? "dark" : "light"}>
+                Rarity
+              </SidebarLabel>
+            </Stack>
+            <Select
+              value={rarityCategory}
+              onChange={(e) =>
+                setRarityCategory(e.target.value as RarityCategory)
+              }
+              fullWidth
+              size="small"
+              MenuProps={{
+                PaperProps: {
+                  sx: {
+                    backgroundColor: isDarkTheme ? "#2b2b2b" : "#fff",
+                    border: isDarkTheme
+                      ? "1px solid #3b3b3b"
+                      : "1px solid #eaebf0",
+                    "& .MuiMenuItem-root": {
+                      color: isDarkTheme ? "#fff" : "#000",
+                      "&:hover": {
+                        backgroundColor: isDarkTheme
+                          ? "rgba(255, 255, 255, 0.08)"
+                          : "rgba(0, 0, 0, 0.04)",
+                      },
+                      "&.Mui-selected": {
+                        backgroundColor: isDarkTheme
+                          ? "rgba(153, 51, 255, 0.16)"
+                          : "rgba(153, 51, 255, 0.08)",
+                        "&:hover": {
+                          backgroundColor: isDarkTheme
+                            ? "rgba(153, 51, 255, 0.24)"
+                            : "rgba(153, 51, 255, 0.12)",
+                        },
+                      },
+                    },
+                  },
+                },
+              }}
+              sx={{
+                backgroundColor: isDarkTheme ? "#2b2b2b" : "#fff",
+                color: isDarkTheme ? "#fff" : "#000",
+                ".MuiOutlinedInput-notchedOutline": {
+                  borderColor: isDarkTheme ? "#3b3b3b" : "#eaebf0",
+                },
+                "&:hover .MuiOutlinedInput-notchedOutline": {
+                  borderColor: isDarkTheme ? "#fff" : "#93f",
+                },
+                "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+                  borderColor: "#93f",
+                },
+                ".MuiSvgIcon-root": {
+                  color: isDarkTheme ? "#fff" : "#000",
+                },
+              }}
+            >
+              <MenuItem value="all">All Rarities</MenuItem>
+              {Object.entries(RARITY_CATEGORIES)
+                .reverse()
+                .map(([key, { label }]) => (
+                  <MenuItem key={key} value={key}>
+                    {label}
+                  </MenuItem>
                 ))}
-              </ToggleButtonGroup>
-            </Paper>
-            <Box sx={{ display: "flex", alignItems: "center" }}>
-              <Typography
-                variant="body2"
-                color="textSecondary"
-                sx={{
-                  color: isDarkTheme ? "white" : "black",
-                }}
-              >
-                Years
-              </Typography>
-            </Box>
-          </Stack>
-        </SidebarFilter>
-      </SidebarFilterContainer>*/}
-      {/*<SidebarFilterContainer>
-        <SidebarFilter>
-          <Stack
-            direction="row"
-            sx={{
-              justifyContent: "flex-start",
-              width: "100%",
-              gap: "12px",
-            }}
-          >
-            <LayersIcon />
-            <SidebarLabel className={isDarkTheme ? "dark" : "light"}>
-              Collection
-            </SidebarLabel>
-           
-          </Stack>
-          <CollectionSelect
-            filter={(c: any) => {
-              return listCollectionIds.includes(c.contractId);
-            }}
-            onChange={(newValue: any) => {
-              if (!newValue) {
-                setCollection("");
-                return;
-              }
-              setCollection(`${newValue?.contractId}`);
-            }}
-          />
-        </SidebarFilter>
-      </SidebarFilterContainer>*/}
-    </SidebarFilterRoot>
+            </Select>
+          </SidebarFilter>
+        </SidebarFilterContainer>
+      </SidebarFilterRoot>
+    </>
   );
+
+  // Add new state for drip toggle
+  const [showDrip, setShowDrip] = useState(false);
+
+  // Add new state variables near the top of the Collection component
+  const [isBrowseMode, setIsBrowseMode] = useState(() => {
+    // Default to browse mode if there are no listings
+    return filteredListings?.length === 0;
+  });
+
+  // Update useEffect to watch for changes in filteredListings
+  useEffect(() => {
+    if (filteredListings?.length === 0) {
+      setIsBrowseMode(true);
+    } else {
+      setIsBrowseMode(false);
+    }
+  }, [filteredListings]);
+
+  // Add new state variable
+  const [isLoadingAllTokens, setIsLoadingAllTokens] = useState(false);
+  const [allTokens, setAllTokens] = useState<any[]>([]);
+
+  // Add new function to fetch all tokens
+  const handleBrowseAll = async () => {
+    if (!id) return;
+    setIsLoadingAllTokens(true);
+    try {
+      const response = await getCollectionTokens(id);
+      setAllTokens(
+        (response.tokens || []).filter(
+          (token: any) => !!token.metadata && token.owner !== zeroAddress
+        )
+      );
+      setIsBrowseMode(true);
+    } catch (error) {
+      console.error("Failed to fetch all tokens:", error);
+      toast.error("Failed to load all collection items");
+    } finally {
+      setIsLoadingAllTokens(false);
+    }
+  };
+
+  // Add this calculation before the return statement
+  const floorPrice = useMemo(() => {
+    if (!filteredListings || filteredListings.length === 0) return null;
+    return filteredListings.reduce((min, listing) => {
+      const price = Number(formatUnits(BigInt(listing.price), 6));
+      return price < min ? price : min;
+    }, Number.MAX_VALUE);
+  }, [filteredListings]);
+
+  // Add this calculation alongside the floorPrice calculation
+  const ceilingPrice = useMemo(() => {
+    if (!filteredListings || filteredListings.length === 0) return null;
+    return filteredListings.reduce((max, listing) => {
+      const price = Number(formatUnits(BigInt(listing.price), 6));
+      return price > max ? price : max;
+    }, 0);
+  }, [filteredListings]);
+
+  // Add state for compact mode near other state declarations
+  const [isCompactMode, setIsCompactMode] = useState(true);
 
   return (
     <>
+      <HeroSection
+        $isDarkTheme={isDarkTheme}
+        style={{
+          backgroundImage: `url(${displayCoverImage})`,
+        }}
+      >
+        <HeroTitle $isDarkTheme={isDarkTheme}>
+          {displayCollectionName}
+        </HeroTitle>
+        <HeroSubtitle $isDarkTheme={isDarkTheme}>
+          {collectionInfo?.project?.description ||
+            "Explore this unique collection of digital assets on the Voi blockchain."}
+        </HeroSubtitle>
+        <BannerLinksContainer>
+          {collectionInfo && (
+            <BannerUrlContainer
+              href={`https://highforge.io/project/${id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <img
+                src="https://highforge.io/apple-touch-icon.png"
+                alt="HighForge"
+                style={{ width: 24, height: 24 }}
+              />
+              HighForge
+            </BannerUrlContainer>
+          )}
+
+          {hasNFTNavigatorData && (
+            <BannerUrlContainer
+              href={`https://nftnavigator.xyz/collection/${id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <img
+                src="https://nftnavigator.xyz/_app/immutable/assets/android-chrome-192x192.BJQGzsFc.png"
+                alt="NFT Navigator"
+                style={{ width: 24, height: 24 }}
+              />
+              NFT Navigator
+            </BannerUrlContainer>
+          )}
+          {collectionProfile && (
+            <>
+              <BannerUrlContainer
+                href={`https://app.envoi.sh/#/${collectionProfile.name}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <img
+                  src={
+                    collectionProfile.metadata.avatar ||
+                    "https://app.envoi.sh/favicon.ico"
+                  }
+                  alt="Envoi"
+                  style={{ width: 24, height: 24, borderRadius: "50%" }}
+                />
+                {collectionProfile.name}
+              </BannerUrlContainer>
+
+              {collectionProfile.metadata["com.twitter"] && (
+                <BannerUrlContainer
+                  href={`https://x.com/${collectionProfile.metadata["com.twitter"]}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                  </svg>
+                  {collectionProfile.metadata["com.twitter"]}
+                </BannerUrlContainer>
+              )}
+
+              {collectionProfile.metadata["url"] && (
+                <BannerUrlContainer
+                  href={`${collectionProfile.metadata["url"]}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+                    <path
+                      d="M10 6H6C4.89543 6 4 6.89543 4 8V18C4 19.1046 4.89543 20 6 20H16C17.1046 20 18 19.1046 18 18V14M14 4H20M20 4V10M20 4L10 14"
+                      strokeWidth="2"
+                      stroke="white"
+                      fill="none"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  {
+                    collectionProfile.metadata["url"]
+                      .replace(/^https?:\/\//, "")
+                      .split("/")[0]
+                  }
+                </BannerUrlContainer>
+              )}
+            </>
+          )}
+        </BannerLinksContainer>
+        <StatsHighlight>
+          <StatItem $isDarkTheme={isDarkTheme}>
+            <div className="stat-value">{collectionNfts.length}</div>
+            <div className="stat-label">TOTAL ITEMS</div>
+          </StatItem>
+          <StatItem $isDarkTheme={isDarkTheme}>
+            <div className="stat-value">{filteredListings.length}</div>
+            <div className="stat-label">LISTED ITEMS</div>
+          </StatItem>
+          <StatItem $isDarkTheme={isDarkTheme}>
+            <div className="stat-value">{collectionSales.length}</div>
+            <div className="stat-label">TOTAL SALES</div>
+          </StatItem>
+          <StatItem $isDarkTheme={isDarkTheme}>
+            <div className="stat-value">
+              {floorPrice ? `${floorPrice.toFixed(0)}` : "-"}
+            </div>
+            <div className="stat-label">FLOOR PRICE</div>
+          </StatItem>
+          <StatItem $isDarkTheme={isDarkTheme}>
+            <div className="stat-value">
+              {ceilingPrice ? `${ceilingPrice.toFixed(0)}` : "-"}
+            </div>
+            <div className="stat-label">CEILING PRICE</div>
+          </StatItem>
+          {getDrips.length > 0 && (
+            <StatItem $isDarkTheme={isDarkTheme}>
+              <div className="stat-value">
+                {Number(getDrips[0].dripAmount).toLocaleString(undefined, {
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 6
+                })} {getDrips[0].symbol}
+              </div>
+              <Tooltip 
+                title={getDrips[0].note || "Rewards earned per NFT per day"}
+                placement="top"
+                arrow
+              >
+                <div className="stat-label" style={{ cursor: 'help' }}>
+                  DRIPS
+                </div>
+              </Tooltip>
+            </StatItem>
+          )}
+        </StatsHighlight>
+      </HeroSection>
       <Layout>
-        <div className="mt-8">
-          <BannerContainer
-            style={{
-              backgroundImage: `url(${displayCoverImage})`,
-              backgroundPosition: "center",
-              backgroundSize: "cover",
-            }}
-          >
-            <BannerOverlay>
-              <BannerTitleContainer>
-                <BannerTitle>{displayCollectionName}</BannerTitle>
-              </BannerTitleContainer>
-
-              <BannerLinksContainer>
-                {collectionProfile?.metadata?.["com.twitter"] && (
-                  <BannerUrlContainer
-                    href={`https://twitter.com/${collectionProfile?.metadata?.["com.twitter"]}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="white"
-                    >
-                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                    </svg>
-                  </BannerUrlContainer>
-                )}
-
-                {collectionProfile?.metadata?.url && (
-                  <BannerUrlContainer
-                    href={collectionProfile?.metadata?.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <span>Visit Website</span>
-                    <NorthEastIcon sx={{ fontSize: 20 }} />
-                  </BannerUrlContainer>
-                )}
-              </BannerLinksContainer>
-            </BannerOverlay>
-          </BannerContainer>
-        </div>
         <ListingRoot className="!flex !flex-col lg:!flex-row !items-center md:!items-start">
-          {/*<div className="sm:!hidden w-full">
-            <DialogSearch>{renderSidebar}</DialogSearch>
-          </div>*/}
+          {renderSidebar}
           <ListingContainer>
             {viewMode === "list" ? (
               <Box sx={{ mt: 3 }}>
@@ -1322,327 +2302,636 @@ export const Collection: React.FC = () => {
               </Box>
             ) : null}
             {viewMode === "grid" ? (
-              <Box sx={{ mt: 3 }}>
-                <div className="items-center flex flex-col sm:grid md:grid-cols-2 lg:grid-cols-4 sm:w-fit gap-4 sm:gap-2 md:gap-3">
-                  {filteredListings
-                    .slice(0, showing)
-                    .map((el: NFTIndexerListingI) => {
-                      const pk = `${el.mpContractId}-${el.mpListingId}`;
-                      const listedToken = {
-                        ...el.token,
-                        metadataURI: stripTrailingZeroBytes(
-                          el.token.metadataURI
-                        ),
-                      };
-                      return (
-                        <Grid2 key={pk}>
+              <Box sx={{ mt: 0 }}>
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+                  <div className="flex items-center gap-3">
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: isDarkTheme ? "#fff" : "textSecondary",
+                      }}
+                    >
+                      {isBrowseMode
+                        ? (showOwned
+                            ? collectionTokens.filter(
+                                (token) =>
+                                  activeAccount &&
+                                  token.owner === activeAccount.address
+                              )
+                            : collectionTokens
+                          ).length
+                        : filteredListings.length}{" "}
+                      items
+                    </Typography>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-3 pl-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {getDrips.length > 0 && (
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={showDrip}
+                              onChange={(e) => setShowDrip(e.target.checked)}
+                              size="small"
+                              sx={{
+                                "& .MuiSwitch-switchBase.Mui-checked": {
+                                  color: "#93f",
+                                  "&:hover": {
+                                    backgroundColor: "rgba(153, 51, 255, 0.04)",
+                                  },
+                                },
+                                "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track":
+                                  {
+                                    backgroundColor: "#93f",
+                                  },
+                              }}
+                            />
+                          }
+                          label={
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                color: isDarkTheme ? "#fff" : "textSecondary",
+                                fontSize: { xs: "0.75rem", sm: "0.875rem" },
+                              }}
+                            >
+                              Drip
+                            </Typography>
+                          }
+                        />
+                      )}
+                      {id === "3818316" ? (
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={isCompactMode}
+                              onChange={(e) =>
+                                setIsCompactMode(e.target.checked)
+                              }
+                              size="small"
+                              sx={{
+                                "& .MuiSwitch-switchBase.Mui-checked": {
+                                  color: "#93f",
+                                  "&:hover": {
+                                    backgroundColor: "rgba(153, 51, 255, 0.04)",
+                                  },
+                                },
+                                "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track":
+                                  {
+                                    backgroundColor: "#93f",
+                                  },
+                              }}
+                            />
+                          }
+                          label={
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                color: isDarkTheme ? "#fff" : "textSecondary",
+                                fontSize: { xs: "0.75rem", sm: "0.875rem" },
+                              }}
+                            >
+                              Compact
+                            </Typography>
+                          }
+                        />
+                      ) : (
+                        <>
+                          {/*<FormControlLabel
+                            control={
+                              <Switch
+                                checked={showRarity}
+                                onChange={(e) =>
+                                  setShowRarity(e.target.checked)
+                                }
+                                size="small"
+                                sx={{
+                                  "& .MuiSwitch-switchBase.Mui-checked": {
+                                    color: "#93f",
+                                    "&:hover": {
+                                      backgroundColor:
+                                        "rgba(153, 51, 255, 0.04)",
+                                    },
+                                  },
+                                  "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track":
+                                    {
+                                      backgroundColor: "#93f",
+                                    },
+                                }}
+                              />
+                            }
+                            label={
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  color: isDarkTheme ? "#fff" : "textSecondary",
+                                  fontSize: { xs: "0.75rem", sm: "0.875rem" },
+                                }}
+                              >
+                                Rarity
+                              </Typography>
+                            }
+                          />*/}
+                          <FormControlLabel
+                            control={
+                              <Switch
+                                checked={showOwned}
+                                onChange={(e) => setShowOwned(e.target.checked)}
+                                disabled={!activeAccount}
+                                size="small"
+                                sx={{
+                                  "& .MuiSwitch-switchBase.Mui-checked": {
+                                    color: "#93f",
+                                    "&:hover": {
+                                      backgroundColor:
+                                        "rgba(153, 51, 255, 0.04)",
+                                    },
+                                  },
+                                  "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track":
+                                    {
+                                      backgroundColor: "#93f",
+                                    },
+                                }}
+                              />
+                            }
+                            label={
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  color: isDarkTheme ? "#fff" : "textSecondary",
+                                  fontSize: { xs: "0.75rem", sm: "0.875rem" },
+                                }}
+                              >
+                                Owned
+                              </Typography>
+                            }
+                          />
+                        </>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {id !== "3818316" && (
+                        <Button
+                          variant="outlined"
+                          onClick={() => setIsBrowseMode(!isBrowseMode)}
+                          size="small"
+                          sx={{
+                            borderColor: isDarkTheme ? "#fff" : "#93f",
+                            color: isDarkTheme ? "#fff" : "#93f",
+                            fontSize: { xs: "0.75rem", sm: "0.875rem" },
+                            padding: { xs: "4px 8px", sm: "6px 16px" },
+                            minWidth: "auto",
+                            "&:hover": {
+                              borderColor: isDarkTheme ? "#fff" : "#93f",
+                              backgroundColor: "rgba(153, 51, 255, 0.04)",
+                            },
+                          }}
+                        >
+                          {isBrowseMode ? "Show Listings" : "Browse All"}
+                        </Button>
+                      )}
+                      {!isBrowseMode && (
+                        <Button
+                          variant="outlined"
+                          startIcon={<LayersIcon />}
+                          onClick={() => setIsSweepModalOpen(true)}
+                          size="small"
+                          sx={{
+                            borderColor: isDarkTheme ? "#fff" : "#93f",
+                            color: isDarkTheme ? "#fff" : "#93f",
+                            fontSize: { xs: "0.75rem", sm: "0.875rem" },
+                            padding: { xs: "4px 8px", sm: "6px 16px" },
+                            minWidth: "auto",
+                            "&:hover": {
+                              borderColor: isDarkTheme ? "#fff" : "#93f",
+                              backgroundColor: "rgba(153, 51, 255, 0.04)",
+                            },
+                          }}
+                        >
+                          Sweep
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {id === "3818316" ? (
+                  isCompactMode ? (
+                    // Compact 10x10 grid
+                    <SpecialGrid>
+                      {Array.from({ length: 100 }, (_, i) => i + 1).map(
+                        (tokenId) => {
+                          const token = collectionTokens.find(
+                            (t) => Number(t.tokenId) === tokenId
+                          );
+                          if (!token) return null;
+
+                          const activeListing = filteredListings.find(
+                            (listing) =>
+                              Number(listing.token.contractId) ===
+                                Number(token.contractId) &&
+                              Number(listing.token.tokenId) ===
+                                Number(token.tokenId)
+                          );
+
+                          const metadata = JSON.parse(token.metadata || "{}");
+                          const imageUrl = metadata.image?.startsWith("ipfs://")
+                            ? `https://ipfs.io/ipfs/${metadata.image.slice(7)}`
+                            : metadata.image;
+
+                          return (
+                            <SpecialGridItem
+                              key={tokenId}
+                              onClick={() => {
+                                navigate(
+                                  `/collection/3818316/token/${tokenId}`
+                                );
+                              }}
+                            >
+                              <img src={imageUrl} alt={`Token ${tokenId}`} />
+                              <div className="token-number">{tokenId}</div>
+                              {activeListing && (
+                                <div className="price">
+                                  {formatter.format(
+                                    Number(
+                                      formatUnits(
+                                        BigInt(activeListing.price),
+                                        6
+                                      )
+                                    )
+                                  )}{" "}
+                                  VOI
+                                </div>
+                              )}
+                            </SpecialGridItem>
+                          );
+                        }
+                      )}
+                    </SpecialGrid>
+                  ) : (
+                    // Regular grid view
+                    <ListingGrid>
+                      {collectionTokens.slice(0, showing).map((token) => {
+                        const metadata = JSON.parse(token.metadata || "{}");
+                        const imageUrl = metadata.image?.startsWith("ipfs://")
+                          ? `https://ipfs.io/ipfs/${metadata.image.slice(7)}`
+                          : metadata.image;
+                        const tokenWithImage = {
+                          ...token,
+                          metadata: JSON.stringify({
+                            ...metadata,
+                            image: imageUrl,
+                          }),
+                        };
+                        // Find if this token has an active listing
+                        const activeListing = filteredListings.find(
+                          (listing) =>
+                            Number(listing.token.contractId) ===
+                              Number(token.contractId) &&
+                            Number(listing.token.tokenId) ===
+                              Number(token.tokenId)
+                        );
+
+                        return (
                           <CartNftCard
-                            token={listedToken}
-                            listing={el}
+                            key={`${token.contractId}-${token.tokenId}`}
+                            token={tokenWithImage}
+                            listing={activeListing}
+                            showDrip={showDrip}
                             onClick={() => {
                               navigate(
-                                `/collection/${el.token.contractId}/token/${el.token.tokenId}`
+                                `/collection/${token.contractId}/token/${token.tokenId}`
                               );
                             }}
                           />
-                        </Grid2>
-                      );
-                    })}
-                  {showing < sortedListings.length && (
-                    <Grid2>
-                      <div
+                        );
+                      })}
+                    </ListingGrid>
+                  )
+                ) : (
+                  // Original ListingGrid for other collections
+                  <ListingGrid>
+                    {isBrowseMode ? (
+                      isLoadingAllTokens ? (
+                        <CircularProgress sx={{ margin: "auto" }} />
+                      ) : (
+                        collectionTokens
+                          // Add filter for owned tokens
+                          .filter(
+                            (token) =>
+                              !showOwned ||
+                              (activeAccount &&
+                                token.owner === activeAccount.address)
+                          )
+                          .slice(0, showing)
+                          .map((token) => {
+                            const metadata = JSON.parse(token.metadata || "{}");
+                            const imageUrl = metadata.image?.startsWith(
+                              "ipfs://"
+                            )
+                              ? `https://ipfs.io/ipfs/${metadata.image.slice(
+                                  7
+                                )}`
+                              : metadata.image;
+                            const tokenWithImage = {
+                              ...token,
+                              metadata: JSON.stringify({
+                                ...metadata,
+                                image: imageUrl,
+                              }),
+                            };
+                            const rarity = showRarity
+                              ? rarityData.find(
+                                  (r) => r.tokenId === token.tokenId
+                                )
+                              : undefined;
+
+                            // Find if this token has an active listing
+                            const activeListing = filteredListings.find(
+                              (listing) =>
+                                Number(listing.token.contractId) ===
+                                  Number(token.contractId) &&
+                                Number(listing.token.tokenId) ===
+                                  Number(token.tokenId)
+                            );
+
+                            return (
+                              <CartNftCard
+                                isOwned={
+                                  (activeAccount?.address || "") === token.owner
+                                }
+                                key={`${token.contractId}-${token.tokenId}`}
+                                token={tokenWithImage}
+                                rarity={rarity}
+                                showDrip={showDrip}
+                                listing={activeListing} // Pass the listing if it exists
+                                onClick={() => {
+                                  navigate(
+                                    `/collection/${token.contractId}/token/${token.tokenId}`
+                                  );
+                                }}
+                              />
+                            );
+                          })
+                      )
+                    ) : (
+                      // Existing listings display logic
+                      filteredListings
+                        .slice(0, showing)
+                        .map((el: NFTIndexerListingI) => {
+                          const pk = `${el.mpContractId}-${el.mpListingId}`;
+                          const listedToken = {
+                            ...el.token,
+                            metadataURI: stripTrailingZeroBytes(
+                              el.token.metadataURI
+                            ),
+                          };
+                          // Only pass rarity data if showRarity is true
+                          const rarity = showRarity
+                            ? rarityData.find(
+                                (token) => token.tokenId === el.token.tokenId
+                              )
+                            : undefined;
+                          return (
+                            <CartNftCard
+                              key={pk}
+                              token={listedToken}
+                              listing={el}
+                              rarity={rarity}
+                              showDrip={showDrip}
+                              onClick={() => {
+                                navigate(
+                                  `/collection/${el.token.contractId}/token/${el.token.tokenId}`
+                                );
+                              }}
+                            />
+                          );
+                        })
+                    )}
+
+                    {showing <
+                      (isBrowseMode
+                        ? collectionTokens.length
+                        : sortedListings.length) && (
+                      <Button
+                        variant="outlined"
+                        fullWidth
                         onClick={() => setShowing(showing + 50)}
-                        className={`${
-                          isDarkTheme ? "button-dark" : "button-light"
-                        } cursor-pointer`}
+                        sx={{
+                          borderColor: isDarkTheme ? "#fff" : "#93f",
+                          color: isDarkTheme ? "#fff" : "#93f",
+                          height: "48px",
+                          "&:hover": {
+                            borderColor: isDarkTheme ? "#fff" : "#93f",
+                            backgroundColor: "rgba(153, 51, 255, 0.04)",
+                          },
+                        }}
                       >
-                        <Button
-                          className={
-                            isDarkTheme
-                              ? "button-text-dark"
-                              : "button-text-light"
-                          }
-                        >
-                          View More
-                        </Button>
-                      </div>
-                    </Grid2>
-                  )}
-                </div>
+                        View More
+                      </Button>
+                    )}
+                  </ListingGrid>
+                )}
               </Box>
             ) : null}
           </ListingContainer>
         </ListingRoot>
       </Layout>
-      {false && (
-        <Layout>
-          {!isLoading ? (
-            <div>
-              <BannerContainer
-                style={{
-                  backgroundImage: `url(${displayCoverImage})`,
-                  backgroundPosition: "center",
-                  backgroundSize: "cover",
-                }}
-              >
-                <BannerOverlay>
-                  <BannerTitleContainer>
-                    <BannerTitle>{displayCollectionName}</BannerTitle>
-                  </BannerTitleContainer>
 
-                  <BannerLinksContainer>
-                    {collectionTwitter && (
-                      <BannerUrlContainer
-                        href={`https://twitter.com/${collectionTwitter}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="20"
-                          height="20"
-                          viewBox="0 0 24 24"
-                          fill="white"
-                        >
-                          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                        </svg>
-                      </BannerUrlContainer>
-                    )}
-
-                    {collectionUrl && (
-                      <BannerUrlContainer
-                        href={collectionUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <span>Visit Website</span>
-                        <NorthEastIcon sx={{ fontSize: 20 }} />
-                      </BannerUrlContainer>
-                    )}
-                  </BannerLinksContainer>
-                </BannerOverlay>
-              </BannerContainer>
-              <Stack direction="row" spacing={2} sx={{ justifyContent: "end" }}>
-                <ToggleButtonGroup
-                  color="primary"
-                  value={viewMode}
-                  exclusive
-                  onChange={() => {
-                    setViewMode(viewMode === "list" ? "grid" : "list");
-                  }}
-                  aria-label="Platform"
-                >
-                  <ToggleButton value="list">
-                    <ViewListIcon />
-                  </ToggleButton>
-                  <ToggleButton value="grid">
-                    <GridViewIcon />
-                  </ToggleButton>
-                </ToggleButtonGroup>
-              </Stack>
-              <Grid container spacing={2}>
-                {/*<Grid
-              item
-              sx={{ display: { xs: "none", sm: "block" } }}
-              xs={12}
-              sm={12}
+      <SweepModal
+        $isDarkTheme={isDarkTheme}
+        open={isSweepModalOpen}
+        onClose={() => !isPurchasePending && setIsSweepModalOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <StyledDialogContent $isDarkTheme={isDarkTheme}>
+          <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 2 }}>
+            <IconButton
+              onClick={() => setIsSweepModalOpen(false)}
+              sx={{
+                color: isDarkTheme ? "#fff" : "#000",
+              }}
             >
-              &nbsp;
-            </Grid>
-            */}
-                <Grid item xs={12} sm={12}>
-                  <Stack sx={{ mt: 5 }} gap={2}>
-                    <StatContainer
-                      sx={{
-                        //display: { xs: "none", md: "flex" },
-                        flexDirection: { xs: "column", md: "row" },
-                        overflow: "hidden",
-                        justifyContent: "flex-end",
-                        gap: "40px",
-                      }}
-                    >
-                      {[
-                        /*
-                    {
-                      name: "Total NFTs",
-                      displayValue: nfts.length,
-                      value: nfts.length,
-                    },
-                    {
-                      name: "Listed",
-                      displayValue:
-                        ((listings.length / nfts.length) * 100).toFixed(2) +
-                        "%",
-                      value: listings.length,
-                    },
-                    {
-                      name: "Sales",
-                      displayValue: collectionSales.length,
-                      value: collectionSales.length,
-                    },
-                    {
-                      name: "Volume",
-                      displayValue:
-                        formatter.format(stats?.volume) +
-                        ` ${stats?.scoreUnit || "VOI"}`,
-                      value: stats?.volume,
-                    },
-
-                    {
-                      name: "Floor Price",
-                      displayValue: `${formatter.format(stats?.floorPrice)} ${
-                        stats?.scoreUnit || "VOI"
-                      }`,
-                      value: stats?.floorPrice,
-                    },
-                    {
-                      name: "Avg. Sale",
-                      displayValue:
-                        formatter.format(
-                          stats?.volume / collectionSales.length
-                        ) + ` ${stats?.scoreUnit || "VOI"}`,
-                      value:
-                        stats?.volume > 0 && collectionSales.length > 0
-                          ? stats?.volume / collectionSales.length
-                          : 0,
-                    },
-                    */
-                      ].map((el, i) =>
-                        el.value > 0 ? (
-                          <Stack
-                            sx={{
-                              flexShrink: 0,
-                            }}
-                            key={i}
-                          >
-                            <Typography sx={{ color: "#717579" }} variant="h6">
-                              {el.name}
-                            </Typography>
-                            <Typography
-                              variant="h4"
-                              className={isDarkTheme ? "dark" : "light"}
-                            >
-                              {el.displayValue}
-                            </Typography>
-                          </Stack>
-                        ) : null
-                      )}
-                    </StatContainer>
-                    <Stack
-                      direction="row"
-                      spacing={2}
-                      sx={{ justifyContent: "end" }}
-                    >
-                      <ToggleButtonGroup
-                        color="primary"
-                        value={viewMode}
-                        exclusive
-                        onChange={() => {
-                          setViewMode(viewMode === "list" ? "grid" : "list");
-                        }}
-                        aria-label="Platform"
-                      >
-                        <ToggleButton value="list">
-                          <ViewListIcon />
-                        </ToggleButton>
-                        <ToggleButton value="grid">
-                          <GridViewIcon />
-                        </ToggleButton>
-                      </ToggleButtonGroup>
-                    </Stack>
-                    {viewMode === "list" ? (
-                      <NFTListingTable
-                        listings={normalListings}
-                        tokens={nfts}
-                        collections={collections}
-                      />
-                    ) : null}
-                    {viewMode === "grid" ? (
-                      sortedListings?.length > 0 ? (
-                        <>
-                          <Grid2 container spacing={2}>
-                            {sortedListings?.map((el: NFTIndexerListingI) => {
-                              return (
-                                <Grid2 key={el.transactionId}>
-                                  <CartNftCard
-                                    token={{
-                                      ...el.token,
-                                      metadataURI: stripTrailingZeroBytes(
-                                        el.token.metadataURI
-                                      ),
-                                    }}
-                                    listing={el}
-                                    onClick={() => {
-                                      navigate(
-                                        `/collection/${el.collectionId}/token/${el.tokenId}`
-                                      );
-                                    }}
-                                  />
-                                </Grid2>
-                              );
-                            })}
-                          </Grid2>
-                        </>
-                      ) : (
-                        <Box sx={{ mt: 5 }}>
-                          <Typography variant="body2">
-                            No NFTs found in this collection
-                          </Typography>
-                        </Box>
-                      )
-                    ) : null}
-                  </Stack>
-                </Grid>
-              </Grid>
+              <Close />
+            </IconButton>
+          </Box>
+          <SweepModalContent>
+            <div>
+              <Typography
+                variant="h6"
+                sx={{ mb: 2, color: isDarkTheme ? "#fff" : "#000" }}
+              >
+                Sweep Mode
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{ mb: 3, color: isDarkTheme ? "#fff" : "#000" }}
+              >
+                Select how many NFTs you want to purchase from lowest to highest
+                price
+              </Typography>
             </div>
-          ) : (
-            <Container maxWidth="lg">
-              <Stack sx={{ mt: 5 }} gap={2}>
-                <Skeleton variant="text" width={280} height={50} />
-                <Grid container spacing={2}>
-                  {[1, 2, 3, 4, 5, 6].map((el) => (
-                    <Grid item xs={6} sm={4} md={3} lg={2}>
-                      <Skeleton
-                        variant="rectangular"
-                        width="100%"
-                        height={200}
+
+            <SweepSliderContainer>
+              <Typography gutterBottom color={isDarkTheme ? "#fff" : "#000"}>
+                Number of NFTs: {selectedCount}
+              </Typography>
+              <Slider
+                value={selectedCount}
+                onChange={(_, value) => setSelectedCount(value as number)}
+                min={1}
+                max={Math.min(5, filteredListings.length)}
+                valueLabelDisplay="auto"
+                sx={{
+                  color: "#93f",
+                  "& .MuiSlider-thumb": {
+                    backgroundColor: isDarkTheme ? "#2b2b2b" : "#fff",
+                    border: "2px solid #93f",
+                  },
+                  "& .MuiSlider-track": {
+                    backgroundColor: "#93f",
+                  },
+                  "& .MuiSlider-rail": {
+                    backgroundColor: isDarkTheme ? "#4b4b4b" : "#e0e0e0",
+                  },
+                  "& .MuiSlider-valueLabel": {
+                    backgroundColor: isDarkTheme ? "#2b2b2b" : "#fff",
+                    color: isDarkTheme ? "#fff" : "#000",
+                  },
+                }}
+              />
+            </SweepSliderContainer>
+
+            <SweepNFTList>
+              {filteredListings
+                .slice(0, selectedCount)
+                .map((listing: NFTIndexerListingI) => {
+                  const metadata = JSON.parse(listing.token.metadata || "{}");
+                  const imageUrl = metadata.image?.startsWith("ipfs://")
+                    ? `https://ipfs.io/ipfs/${metadata.image.slice(7)}`
+                    : metadata.image;
+
+                  return (
+                    <SweepNFTItem
+                      $isDarkTheme={isDarkTheme}
+                      key={`${listing.mpContractId}-${listing.mpListingId}`}
+                    >
+                      <SweepNFTImage
+                        src={imageUrl}
+                        alt={metadata.name}
+                        $isDarkTheme={isDarkTheme}
                       />
-                    </Grid>
-                  ))}
-                </Grid>
-                <Skeleton variant="text" width={280} height={50} />
-                <Skeleton variant="text" width={180} height={50} />
-                <Skeleton variant="text" width={180} height={50} />
-              </Stack>
-            </Container>
-          )}
-        </Layout>
-      )}
+                      <div style={{ flex: 1 }}>
+                        <Typography
+                          variant="body2"
+                          color={isDarkTheme ? "#fff" : "#000"}
+                        >
+                          {metadata.name}
+                        </Typography>
+                        <Typography variant="caption" color="textSecondary">
+                          {formatUnits(BigInt(listing.price), 6)} VOI
+                        </Typography>
+                      </div>
+                    </SweepNFTItem>
+                  );
+                })}
+            </SweepNFTList>
+
+            <SweepTotalContainer $isDarkTheme={isDarkTheme}>
+              <Typography
+                variant="subtitle1"
+                color={isDarkTheme ? "#fff" : "#000"}
+              >
+                Total Cost
+              </Typography>
+              <Typography variant="h6" color={isDarkTheme ? "#fff" : "#000"}>
+                {formatUnits(
+                  filteredListings
+                    .slice(0, selectedCount)
+                    .reduce(
+                      (acc, listing) => acc + BigInt(listing.price),
+                      BigInt(0)
+                    ),
+                  6
+                )}{" "}
+                VOI
+              </Typography>
+            </SweepTotalContainer>
+
+            <Button
+              variant="contained"
+              fullWidth
+              onClick={handleSweepPurchase}
+              disabled={isPurchasePending}
+              sx={{
+                backgroundColor: "#93f",
+                color: "#fff",
+                "&:hover": {
+                  backgroundColor: "#7a29cc",
+                },
+                padding: "16px",
+                fontSize: "1.1rem",
+                fontWeight: "600",
+                marginTop: "16px",
+              }}
+            >
+              {isPurchasePending ? (
+                <CircularProgress size={24} sx={{ color: "white" }} />
+              ) : (
+                `Purchase ${selectedCount} NFTs`
+              )}
+            </Button>
+          </SweepModalContent>
+        </StyledDialogContent>
+      </SweepModal>
     </>
   );
 };
 
 const DialogSearch = ({ children }: { children: ReactNode }) => {
-  return (
-    <Dialog>
-      <DialogTrigger className="w-full">
-        <div className="rounded p-2 border w-full">
-          Search <SearchOutlined />
-        </div>
-      </DialogTrigger>
-      <DialogContent>
-        {/* <DialogHeader>
-      <DialogTitle>Are you absolutely sure?</DialogTitle>
-      <DialogDescription>
-        This action cannot be undone. This will permanently delete your account
-        and remove your data from our servers.
-      </DialogDescription>
-    </DialogHeader> */}
-        {/* <DialogDescription> */}
+  const [open, setOpen] = React.useState(false);
 
-        <div className="flex items-center mx-auto">{children}</div>
-        {/* </DialogDescription> */}
-      </DialogContent>
-    </Dialog>
+  return (
+    <>
+      <div
+        className="rounded p-2 border w-full cursor-pointer"
+        onClick={() => setOpen(true)}
+      >
+        Search <SearchOutlined />
+      </div>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogContent>
+          <div className="flex items-center mx-auto">{children}</div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
+
+async function getCollectionTokens(collectionId: string) {
+  try {
+    const response = await fetch(
+      collectionId !== "421076"
+        ? `https://arc72-voi-mainnet.nftnavigator.xyz/nft-indexer/v1/tokens?contractId=${collectionId}`
+        : `https://mainnet-idx.nautilus.sh/nft-indexer/v1/tokens?contractId=${collectionId}`
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const collectionTokens = await response.json();
+    return collectionTokens;
+  } catch (error) {
+    console.error("Error fetching collection tokens:", error);
+    throw error;
+  }
+}

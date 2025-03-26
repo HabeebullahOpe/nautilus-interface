@@ -1,6 +1,16 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import styled from "styled-components";
-import { Avatar, Badge, Box, Chip, Fade, Stack, Tooltip } from "@mui/material";
+import {
+  Avatar,
+  Badge,
+  Box,
+  Chip,
+  Fade,
+  Stack,
+  SxProps,
+  Theme,
+  Tooltip,
+} from "@mui/material";
 import { stringToColorCode } from "../../utils/string";
 import VoiIcon from "../../static/crypto-icons/voi/0.svg";
 import ViaIcon from "../../static/crypto-icons/voi/6779767.svg";
@@ -30,6 +40,14 @@ import { HIGHFORGE_CDN } from "@/config/arc72-idx";
 import { RootState } from "../../store/store";
 import { fetchTokenInfo } from "@/utils/dex";
 import { decodeRoyalties } from "@/utils/hf";
+import { useNFTDrips } from "@/hooks/useNFTDrips";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
+import DiamondIcon from "@mui/icons-material/Diamond";
+import { useName } from "@/hooks/useName";
+import PersonIcon from "@mui/icons-material/Person";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import useNSFW from "@/hooks/useNSFW";
 
 const formatter = Intl.NumberFormat("en", { notation: "compact" });
 
@@ -66,7 +84,7 @@ const NFTCardWrapper = styled.div`
   flex-direction: column;
   position: relative;
   transition: all 0.1s ease;
-  overflow: hidden;
+  overflow: visible;
   cursor: pointer;
   &:hover {
     transform: scale(1.05);
@@ -247,8 +265,8 @@ const NFTCardWrapper = styled.div`
   }
 `;
 
-// Add this styled component for list view
-const ListViewWrapper = styled.div<{ isDark?: boolean }>`
+// Update the ListViewWrapper styled component
+const ListViewWrapper = styled.div<{ isDark?: boolean; isNSFW?: boolean }>`
   display: flex;
   width: 100%;
   padding: 12px 16px;
@@ -304,16 +322,472 @@ const ListViewWrapper = styled.div<{ isDark?: boolean }>`
       color: #fff;
     }
   `}
+
+  ${(props) =>
+    props.isNSFW &&
+    `
+    .list-image {
+      filter: blur(8px);
+      transition: filter 0.6s ease;
+    }
+
+    &:hover .list-image {
+      filter: none;
+    }
+
+    .nsfw-overlay {
+      position: absolute;
+      left: 16px;
+      top: 12px;
+      width: 64px;
+      height: 64px;
+      border-radius: 10px;
+      background: rgba(0, 0, 255, 0.3);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 12px;
+      font-weight: 600;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+
+      &:hover {
+        background: rgba(0, 0, 255, 0.4);
+      }
+
+      .eye-icon {
+        font-size: 20px;
+      }
+    }
+  `}
+`;
+
+// Add this styled component near the other styled components
+const DripBadge = styled.div`
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: help;
+
+  img {
+    width: 24px;
+    height: 24px;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+  }
+`;
+
+// Add this new component for the tooltip content
+const DripTooltipContent = styled.div`
+  padding: 8px;
+
+  .drip-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  .drip-amount {
+    font-family: monospace;
+    font-weight: 600;
+  }
+`;
+
+// Add this SVG component near the top of the file
+const DripIcon = () => (
+  <svg
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path
+      d="M12 21C16.4183 21 20 17.4183 20 13C20 8.58172 12 2 12 2C12 2 4 8.58172 4 13C4 17.4183 7.58172 21 12 21Z"
+      fill="#00A3FF"
+      stroke="#FFFFFF"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const getRarityColor = (rarity: string) => {
+  switch (rarity.toLowerCase()) {
+    case "legendary":
+      return "linear-gradient(135deg, #FFD700, #FFA500)"; // Gold gradient
+    case "epic":
+      return "linear-gradient(135deg, #9400D3, #4B0082)"; // Purple gradient
+    case "rare":
+      return "linear-gradient(135deg, #0096FF, #0044FF)"; // Blue gradient
+    case "uncommon":
+      return "linear-gradient(135deg, #50C878, #228B22)"; // Green gradient
+    default: // Common
+      return "linear-gradient(135deg, #808080, #404040)"; // Gray gradient
+  }
+};
+
+// Update the RarityBadge styled component
+const RarityBadge = styled.div<{ rarity: string }>`
+  position: absolute;
+  bottom: 16px;
+  right: 12px;
+  padding: 8px 16px;
+  padding-left: 12px;
+  padding-right: 12px;
+  border-radius: 16px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  background: ${(props) => getRarityColor(props.rarity)};
+  z-index: 2;
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  transition: all 0.2s ease-in-out;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 85px;
+  z-index: 999;
+  &:hover {
+    max-width: 240px;
+    transform: scale(1.05);
+  }
+
+  .rank {
+    font-size: 18px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-right: 6px;
+    .gem-icon {
+      font-size: 24px;
+      opacity: 0.9;
+    }
+  }
+
+  .label {
+    opacity: 0.9;
+    margin-right: 6px;
+    font-size: 16px;
+  }
+`;
+
+// Update the PriceTag styled component
+const PriceTag = styled.div<{ isDark?: boolean }>`
+  position: absolute;
+  top: 16px;
+  left: 12px;
+  padding: 8px 16px;
+  padding-left: 12px;
+  padding-right: 12px;
+  border-radius: 16px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #2b2b2b, #1a1a1a);
+  z-index: 999;
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  transition: all 0.2s ease-in-out;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 85px;
+
+  &:hover {
+    max-width: 240px;
+    transform: scale(1.05);
+  }
+
+  .chip {
+    background: rgba(255, 255, 255, 0.9);
+    color: #161717;
+    border: none;
+    font-weight: 500;
+    height: 20px;
+    font-size: 0.75rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+
+  span {
+    font-size: 16px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+`;
+
+// Add this styled component near the other styled components
+const OwnershipBadge = styled.div<{ showDrip?: boolean; isDark?: boolean }>`
+  position: absolute;
+  top: ${(props) => (props.showDrip ? "52px" : "16px")};
+  right: 12px;
+  padding: 8px;
+  border-radius: 50%;
+  background: ${(props) => (props.isDark ? "#2b2b2b" : "#fff")};
+  color: ${(props) => (props.isDark ? "#fff" : "#161717")};
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  z-index: 999;
+  transition: all 0.2s ease-in-out;
+
+  &:hover {
+    transform: scale(1.1);
+  }
+
+  svg {
+    font-size: 20px;
+  }
+`;
+
+// Update the OwnerText component to include the icon
+const OwnerText = styled.div`
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  .person-icon {
+    font-size: 16px;
+    opacity: 0.8;
+  }
+`;
+
+// Add this styled component near the other styled components
+const CompactViewWrapper = styled.div<{ isDark?: boolean }>`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 8px;
+  background: ${(props) => (props.isDark ? "#202020" : "#fff")};
+  border: 1px solid ${(props) => (props.isDark ? "#2b2b2b" : "#eaebf0")};
+  cursor: pointer;
+  transition: all 0.1s ease;
+  width: 100%;
+  position: relative;
+
+  &:hover {
+    transform: scale(1.01);
+    z-index: 1;
+    box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .compact-image {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    object-fit: cover;
+  }
+
+  .compact-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .compact-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: ${(props) => (props.isDark ? "#fff" : "#161717")};
+  }
+
+  .compact-price {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: ${(props) => (props.isDark ? "rgba(255,255,255,0.7)" : "#666")};
+
+    span {
+      font-family: monospace;
+      font-weight: 600;
+    }
+  }
+
+  .compact-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px;
+
+    img {
+      cursor: pointer;
+      transition: all 0.2s ease;
+
+      &:hover {
+        transform: scale(1.1);
+      }
+    }
+  }
+`;
+
+// Add this styled component near the other styled components
+const HighestOfferBadge = styled.div<{ isDark?: boolean }>`
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  padding: 8px 16px;
+  border-radius: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #2b2b2b80, #1a1a1a80);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  z-index: 999;
+  transition: all 0.2s ease-in-out;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 120px;
+
+  &:hover {
+    max-width: 240px;
+    transform: scale(1.05);
+  }
+
+  .offer-icon {
+    font-size: 18px;
+    opacity: 0.9;
+  }
+
+  span {
+    font-family: monospace;
+    font-weight: 700;
+  }
+`;
+
+// Update the NSFWOverlay styled component
+const NSFWOverlay = styled.div`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 255, 0.3);
+  backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: white;
+  font-size: 18px;
+  font-weight: 600;
+  z-index: 2;
+  cursor: pointer;
+  border-radius: 20px;
+  text-align: center;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(0, 0, 255, 0.4);
+
+    .eye-icon {
+      transform: scale(1.1);
+    }
+  }
+
+  .eye-icon {
+    font-size: 32px;
+    opacity: 0.9;
+    transition: transform 0.2s ease;
+  }
+`;
+
+// Update the PixelatedImage styled component
+const PixelatedImage = styled(Box)<{ showNSFW: boolean; isNSFW: boolean }>`
+  image-rendering: pixelated;
+  transform: scale(0.1);
+  transform-origin: 0 0;
+  width: 1000%;
+  height: 1000%;
+  filter: ${(props) =>
+    props.isNSFW && !props.showNSFW
+      ? "blur(64px) brightness(0.8) contrast(0.9)"
+      : "none"};
+  transition: filter 0.6s ease;
+
+  ${(props) =>
+    props.isNSFW &&
+    !props.showNSFW &&
+    `
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(
+        45deg,
+        #ff0000,
+        #ff7f00,
+        #ffff00,
+        #00ff00,
+        #0000ff,
+        #4b0082,
+        #8f00ff
+      );
+      background-size: 400% 400%;
+      mix-blend-mode: overlay;
+      opacity: 0.3;
+      animation: rainbow 10s ease infinite;
+      z-index: 1;
+    }
+
+    @keyframes rainbow {
+      0% { background-position: 0% 50% }
+      50% { background-position: 100% 50% }
+      100% { background-position: 0% 50% }
+    }
+  `}
 `;
 
 interface NFTCardProps {
   token: ListingTokenI | NFTIndexerTokenI;
   listing?: NFTIndexerListingI;
+  offers?: any[];
   onClick?: () => void;
   selected?: boolean;
   size?: "small" | "medium" | "large";
   imageOnly?: boolean;
-  viewMode?: "grid" | "list";
+  viewMode?: "grid" | "list" | "compact";
+  sx?: SxProps<Theme>;
+  hideOverlay?: boolean;
+  rarity?: any;
+  showDrip?: boolean;
+  isOwned?: boolean;
 }
 
 const CartNftCard: React.FC<NFTCardProps> = ({
@@ -321,21 +795,26 @@ const CartNftCard: React.FC<NFTCardProps> = ({
   size = "medium",
   token,
   listing,
+  offers,
   onClick,
   selected,
   viewMode = "grid",
+  sx,
+  hideOverlay = false,
+  rarity,
+  showDrip = false,
+  isOwned = false,
 }) => {
+  console.log({ token });
+  const { isNSFW: isNSFWCollection } = useNSFW();
+  const isNSFW = isNSFWCollection(Number(token.contractId));
+
+  const { drips, loading, error } = useNFTDrips();
   const { activeAccount, signTransactions } = useWallet();
 
+  const { fetchName } = useName();
+
   const metadata = JSON.parse(token.metadata || "{}");
-
-  const royalties = metadata?.royalties
-    ? decodeRoyalties(metadata?.royalties || "")
-    : null;
-
-  console.log({ royalties });
-
-  const navigate = useNavigate();
 
   const [display, setDisplay] = React.useState(true);
 
@@ -350,6 +829,7 @@ const CartNftCard: React.FC<NFTCardProps> = ({
 
   const currencyDecimals =
     currency?.decimals === 0 ? 0 : currency?.decimals || 6;
+
   const currencySymbol =
     currency?.tokenId === "0" ? "VOI" : currency?.symbol || "VOI";
 
@@ -357,13 +837,149 @@ const CartNftCard: React.FC<NFTCardProps> = ({
     new BigNumber(10).pow(currencyDecimals)
   );
 
-  const price = formatter.format(priceBn.toNumber());
+  const price =
+    priceBn.toNumber() === 0 ? "0" : formatter.format(priceBn.toNumber());
 
   const priceNormal = useMemo(() => {
-    if (!currency || !currency.price) return 0;
-    const price = priceBn.multipliedBy(new BigNumber(currency.price));
-    return formatter.format(price.toNumber());
-  }, [currency, priceBn]);
+    if (!listing?.price) return "0";
+    const normalPrice = new BigNumber(listing.price).div(
+      new BigNumber(10).pow(currencyDecimals)
+    );
+    return formatter.format(normalPrice.toNumber());
+  }, [listing?.price, currencyDecimals]);
+
+  const [resolvedName, setResolvedName] = React.useState<string | null>(null);
+
+  // Add this helper function for IndexedDB operations
+  const initDB = async () => {
+    return new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("envoiNamesDB", 1);
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+        if (!db.objectStoreNames.contains("names")) {
+          db.createObjectStore("names", { keyPath: "tokenId" });
+        }
+      };
+    });
+  };
+
+  // Update the useEffect hook
+  useEffect(() => {
+    const resolveEnVoiName = async () => {
+      if (metadata.name?.toLowerCase().includes("envoi name")) {
+        try {
+          const db = await initDB();
+
+          // Check IndexedDB first
+          const cachedData = await new Promise((resolve, reject) => {
+            const transaction = db.transaction("names", "readonly");
+            const store = transaction.objectStore("names");
+            const request = store.get(token.tokenId);
+
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+          });
+
+          if (cachedData) {
+            const { name, timestamp } = cachedData as {
+              name: string;
+              timestamp: number;
+            };
+            // Check if cache is still valid (less than 24 hours old)
+            if (Date.now() - timestamp < 24 * 60 * 60 * 1000) {
+              setResolvedName(name);
+              return;
+            }
+          }
+
+          // If no valid cache, fetch from API
+          const response = await fetch(
+            `https://api.envoi.sh/api/token/${token.tokenId}`
+          );
+          const data = await response.json();
+
+          if (data.results?.[0]?.name) {
+            // Cache the result with timestamp in IndexedDB
+            const transaction = db.transaction("names", "readwrite");
+            const store = transaction.objectStore("names");
+            store.put({
+              tokenId: token.tokenId,
+              name: data.results[0].name,
+              timestamp: Date.now(),
+            });
+
+            setResolvedName(data.results[0].name);
+          }
+        } catch (error) {
+          console.error("Failed to resolve enVoi name:", error);
+        }
+      }
+    };
+    resolveEnVoiName();
+  }, [token.tokenId, metadata.name]);
+
+  const [ownerName, setOwnerName] = React.useState<string | null>(null);
+
+  useEffect(() => {
+    const resolveOwnerName = async () => {
+      if (token.owner) {
+        try {
+          const db = await initDB();
+
+          // Check IndexedDB first
+          const cachedData = await new Promise((resolve, reject) => {
+            const transaction = db.transaction("names", "readonly");
+            const store = transaction.objectStore("names");
+            const request = store.get(token.owner);
+
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+          });
+
+          if (cachedData) {
+            const { name, timestamp } = cachedData as {
+              name: string;
+              timestamp: number;
+            };
+            // Check if cache is still valid (less than 24 hours old)
+            if (Date.now() - timestamp < 24 * 60 * 60 * 1000) {
+              setOwnerName(name);
+              return;
+            }
+          }
+
+          // If no valid cache, fetch from API
+          const name = await fetchName(token.owner);
+          if (name) {
+            // Cache the result with timestamp in IndexedDB
+            const transaction = db.transaction("names", "readwrite");
+            const store = transaction.objectStore("names");
+            store.put({
+              tokenId: token.owner, // Using owner address as key
+              name: name,
+              timestamp: Date.now(),
+            });
+
+            setOwnerName(name);
+          }
+        } catch (error) {
+          console.error("Failed to resolve owner's enVoi name:", error);
+        }
+      }
+    };
+    resolveOwnerName();
+  }, [token.owner]);
+
+  const displayName = useMemo(() => {
+    if (resolvedName) return resolvedName;
+    if (metadata.name?.includes(".voi")) return metadata.name;
+    if ((metadata.name || "").match(/[0-9]/)) return metadata.name;
+    return `${metadata.name} #${token.tokenId}`;
+  }, [metadata.name, token.tokenId, resolvedName]);
 
   const handleBuyButtonClick = async () => {
     try {
@@ -465,44 +1081,23 @@ const CartNftCard: React.FC<NFTCardProps> = ({
     discount: any,
     simulationResults: any
   ) => {
-    console.log({ pool, discount, simulationResults });
-    if (!activeAccount || !listing) {
-      toast.info("Please connect wallet!");
-      return;
-    }
     try {
+      if (!activeAccount || !listing) {
+        toast.info("Please connect wallet!");
+        return;
+      }
       const doWithdraw = listing.currency === 0;
       setIsBuying(true);
-      // -------------------------------------
-      // SIM HERE
-      // -------------------------------------
+
       const { algodClient, indexerClient } = getAlgorandClients();
 
-      // approve spending
-
-      // {
-      //   const ci = new CONTRACT(
-      //     Number(listing?.currency),
-      //     algodClient,
-      //     indexerClient,
-      //     abi.nt200,
-      //     {
-      //       addr: activeAccount.address,
-      //       sk: new Uint8Array(0),
-      //     }
-      //   );
-      //   const approveR = await ci.arc200_approve(
-      //     algosdk.getApplicationAddress(pool.contractId),
-      //     Number.MAX_SAFE_INTEGER
-      //   );
-      //   if (!approveR.success) throw new Error("approve failed");
-      //   const stxn = await signTransactions(
-      //     approveR.txns.map(
-      //       (t: string) => new Uint8Array(Buffer.from(t, "base64"))
-      //     )
-      //   );
-      //   await algodClient.sendRawTransaction(stxn as Uint8Array[]).do();
-      // }
+      const defaultPaymentToken = {
+        contractId: 390001,
+        name: "Wrapped Voi",
+        symbol: "wVOI",
+        decimals: 6,
+        tokenId: "0",
+      };
 
       let customR;
       for (const skipEnsure of [true, false]) {
@@ -514,27 +1109,15 @@ const CartNftCard: React.FC<NFTCardProps> = ({
             poolBalA,
             poolBalB,
           } = pool;
-          console.log({ poolId, tokAId, tokBId });
-          // -------------------------------------
-
-          // request tokens from api
-
           const tokA = await fetchTokenInfo(tokAId);
           const tokB = await fetchTokenInfo(tokBId);
-
           const inToken = tokA?.tokenId === "0" ? tokB : tokA;
           const outToken = tokA?.tokenId !== "0" ? tokB : tokA;
-
-          console.log({ tokA, tokB, inToken, outToken, poolId });
-
           const amount = new BigNumber(
             simulationResults[inToken?.contractId || 0]?.outputAmount
           )
             .dividedBy(new BigNumber(10).pow(inToken?.decimals || 0))
             .toString();
-
-          console.log({ amount });
-
           const A = {
             ...inToken,
             amount,
@@ -550,56 +1133,38 @@ const CartNftCard: React.FC<NFTCardProps> = ({
           ).swap(activeAccount.address, poolId, A, B, [], {
             doWithdraw,
           }); // withdraws by default
-
-          console.log({ swapR });
-
           if (!swapR.success) throw new Error("swap failed");
-          // const returnValue = swapR.response.txnGroups[0].txnResults
-          //   .slice(-1)[0]
-          //   .txnResult.logs.slice(-1)[0];
-
-          // const selector = returnValue.slice(0, 4).toString("hex");
-          // const outA = algosdk.bytesToBigInt(returnValue.slice(4, 36));
-          // const outB = algosdk.bytesToBigInt(returnValue.slice(36, 68));
-
-          // const currencyId =
-          //   listing.currency === 0 ? TOKEN_WVOI : listing.currency;
-
-          const currency = {
-            contractId: 390001,
-            name: "Wrapped Voi",
-            symbol: "wVOI",
-            decimals: 6,
-            tokenId: "0",
-          };
-
-          customR = await mp.buy(activeAccount.address, listing, currency, {
-            paymentTokenId:
-              listing.currency === 0 ? TOKEN_WVOI : listing.currency,
-            wrappedNetworkTokenId: TOKEN_WVOI,
-            extraTxns: swapR.objs,
-            algodClient,
-            indexerClient,
-            skipEnsure,
-          });
-          console.log({ customR });
+          customR = await mp.buy(
+            activeAccount.address,
+            listing,
+            defaultPaymentToken,
+            {
+              paymentTokenId:
+                listing.currency === 0 ? TOKEN_WVOI : listing.currency,
+              wrappedNetworkTokenId: TOKEN_WVOI,
+              extraTxns: swapR.objs,
+              algodClient,
+              indexerClient,
+              skipEnsure,
+              strategy: "default",
+            }
+          );
         } else {
-          const paymentToken = {
-            contractId: 390001,
-            name: "Wrapped Voi",
-            symbol: "wVOI",
-            decimals: 6,
-            tokenId: "0",
-          };
-          customR = await mp.buy(activeAccount.address, listing, paymentToken, {
-            paymentTokenId:
-              listing.currency === 0 ? TOKEN_WVOI : listing.currency,
-            wrappedNetworkTokenId: TOKEN_WVOI,
-            extraTxns: [],
-            algodClient,
-            indexerClient,
-            skipEnsure,
-          });
+          customR = await mp.buy(
+            activeAccount.address,
+            listing,
+            defaultPaymentToken,
+            {
+              paymentTokenId:
+                listing.currency === 0 ? TOKEN_WVOI : listing.currency,
+              wrappedNetworkTokenId: TOKEN_WVOI,
+              extraTxns: [],
+              algodClient,
+              indexerClient,
+              skipEnsure,
+              strategy: "default",
+            }
+          );
         }
         if (customR.success) break;
       }
@@ -646,79 +1211,230 @@ const CartNftCard: React.FC<NFTCardProps> = ({
       setOpenBuyModal(false);
     }
   };
-  const collectionsMissingImage = [35720076];
+  const collectionsMissingImage = [35720076, 797609];
 
-  const url = metadata.image?.includes("ipfs://")
+  const url = metadata.image?.startsWith("https://ipfs.io/ipfs/")
+    ? metadata.image
+    : metadata.image?.startsWith("ipfs://")
     ? `https://ipfs.io/ipfs/${metadata.image.split("ipfs://")[1]}`
     : !collectionsMissingImage?.includes(Number(token.contractId))
     ? `${HIGHFORGE_CDN}/i/${encodeURIComponent(token.metadataURI)}?w=400`
     : metadata.image;
 
-  const displayName = metadata.name?.includes(".voi")
-    ? metadata.name
-    : (metadata.name || "").match(/[0-9]/)
-    ? metadata.name
-    : `${metadata.name} #${token.tokenId}`;
+  console.log({ metadata, url });
 
   const isDarkTheme = useSelector(
     (state: RootState) => state.theme.isDarkTheme
   );
 
+  // Update the getRarity helper function
+  const getRarity = useMemo(() => {
+    if (rarity?.rank) {
+      // Define rarity tiers based on rank
+      if (rarity.rank === 1)
+        return { label: "Legendary", rank: rarity.rank, show: true };
+      if (rarity.rank <= 9)
+        return { label: "Epic", rank: rarity.rank, show: true };
+      if (rarity.rank <= 25)
+        return { label: "Rare", rank: rarity.rank, show: true };
+      if (rarity.rank <= 99)
+        return { label: "Uncommon", rank: rarity.rank, show: true };
+      return { label: "Common", rank: rarity.rank, show: true };
+    }
+
+    // Check metadata.attributes array first
+    const rarityAttribute = metadata.attributes?.find(
+      (attr: any) => attr.trait_type?.toLowerCase() === "rarity"
+    );
+
+    return {
+      label: metadata.rarity || rarityAttribute?.value || "Common",
+      rank: null,
+      show: !!(metadata.rarity || rarityAttribute?.value),
+    };
+  }, [metadata, rarity]);
+
+  const getDrips = useMemo(() => {
+    const drip = drips.filter(
+      (drip) => Number(drip.collectionId) === Number(token.contractId)
+    );
+    return drip;
+  }, [drips, token.contractId]);
+
+  // Add this helper function to get highest offer
+  const getHighestOffer = useMemo(() => {
+    if (!offers || offers.length === 0) return null;
+
+    const highestOffer = offers.reduce((max, offer) => {
+      const offerAmount = new BigNumber(offer.price || 0).div(
+        new BigNumber(10).pow(currencyDecimals)
+      );
+      const maxAmount = new BigNumber(max.price || 0).div(
+        new BigNumber(10).pow(currencyDecimals)
+      );
+
+      return offerAmount.gt(maxAmount) ? offer : max;
+    }, offers[0]);
+
+    return {
+      amount: new BigNumber(highestOffer.price).div(
+        new BigNumber(10).pow(currencyDecimals)
+      ),
+      currency: highestOffer.currency,
+    };
+  }, [offers, currencyDecimals]);
+
+  // Add this debug log right before the render
+  // console.log("Rarity:", getRarity, rarity);
+
+  const [showNSFWContent, setShowNSFWContent] = useState(false);
+
+  // Add useEffect to handle auto-hide timer
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (showNSFWContent) {
+      timer = setTimeout(() => {
+        setShowNSFWContent(false);
+      }, 5_000);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [showNSFWContent]);
+
+  if (
+    displayName.indexOf("undefined") !== -1 ||
+    displayName === "enVoi name .voi"
+  )
+    return null;
+
+  // Add this before the return statement
+  if (viewMode === "compact") {
+    return (
+      <>
+        <CompactViewWrapper isDark={isDarkTheme} onClick={onClick} sx={sx}>
+          <img className="compact-image" src={url} alt={displayName} />
+          <div className="compact-content">
+            <div className="compact-name">{displayName}</div>
+            {listing?.price && Number(listing.price) > 0 && (
+              <div className="compact-price">
+                <span>
+                  {`${priceNormal || price} ${
+                    priceNormal ? "VOI" : currencySymbol
+                  }`}
+                </span>
+                {priceNormal && currencySymbol !== "VOI" && (
+                  <Chip
+                    className="chip"
+                    size="small"
+                    sx={{
+                      background: isDarkTheme ? "#2b2b2b" : "#fff",
+                      color: isDarkTheme ? "#fff" : "#161717",
+                      border: isDarkTheme ? "none" : "1px solid #eaebf0",
+                      height: "16px",
+                      fontSize: "10px",
+                      padding: "0 4px",
+                    }}
+                    label={`${price} ${currencySymbol}`}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+          {listing?.price && Number(listing.price) > 0 && (
+            <div className="compact-actions">
+              <img
+                height="24"
+                width="24"
+                src="/static/icon-cart.png"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  handleBuyButtonClick();
+                }}
+              />
+            </div>
+          )}
+        </CompactViewWrapper>
+        {activeAccount && openBuyModal && listing ? (
+          <BuySaleModal
+            token={token}
+            listing={listing}
+            seller={listing.seller}
+            open={openBuyModal}
+            loading={isBuying}
+            handleClose={() => setOpenBuyModal(false)}
+            onSave={handleCartIconClick}
+            title="Buy NFT"
+            buttonText="Buy"
+            image={metadata.image}
+            price={price}
+            priceNormal={priceNormal || ""}
+            priceAU={listing.price.toString()}
+            currency={currencySymbol}
+            paymentTokenId={listing.currency}
+          />
+        ) : null}
+      </>
+    );
+  }
+
+  // Update the list view condition
   if (viewMode === "list") {
     return (
       <>
-        <ListViewWrapper isDark={isDarkTheme} onClick={onClick}>
+        <ListViewWrapper isDark={isDarkTheme} onClick={onClick} sx={sx} isNSFW={isNSFW}>
           <img className="list-image" src={url} alt={displayName} />
+          {isNSFW && (
+            <div 
+              className="nsfw-overlay"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowNSFWContent(true);
+              }}
+            >
+              <VisibilityIcon className="eye-icon" />
+            </div>
+          )}
           <div className="list-content">
             <div className="list-header">
-              <Stack gap={0.25}>
-                <CollectionName isDark={isDarkTheme} inList>
-                  {displayName}
-                </CollectionName>
+              <CollectionName isDark={isDarkTheme} inList>
+                {displayName}
+              </CollectionName>
+              {listing?.price && Number(listing.price) > 0 && (
+                <div className="list-actions">
+                  <img
+                    height="24"
+                    width="24"
+                    src="/static/icon-cart.png"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      handleBuyButtonClick();
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+            <div className="list-footer">
+              {listing?.price && Number(listing.price) > 0 && (
                 <CollectionVolume isDark={isDarkTheme} inList>
-                  {price !== "0" ? (
-                    <Stack
-                      direction="row"
-                      gap={0.5}
-                      sx={{ alignItems: "center" }}
-                    >
-                      <span>
-                        {`${priceNormal || price} ${
-                          priceNormal ? "VOI" : currencySymbol
-                        }`}
-                      </span>
-                      {priceNormal && currencySymbol !== "VOI" ? (
-                        <Chip
-                          className="chip"
-                          size="small"
-                          sx={{
-                            background: isDarkTheme ? "#2b2b2b" : "#fff",
-                            color: isDarkTheme ? "#fff" : "#161717",
-                            border: isDarkTheme ? "none" : "1px solid #eaebf0",
-                            height: "20px",
-                            fontSize: "11px",
-                            padding: "0 6px",
-                          }}
-                          label={`${price} ${currencySymbol}`}
-                        />
-                      ) : null}
-                    </Stack>
-                  ) : null}
+                  <Stack direction="row" gap={1} alignItems="center">
+                    <span>
+                      {`${priceNormal || price} ${
+                        priceNormal ? "VOI" : currencySymbol
+                      }`}
+                    </span>
+                    {priceNormal && currencySymbol !== "VOI" && (
+                      <Chip
+                        className="chip"
+                        size="small"
+                        label={`${price} ${currencySymbol}`}
+                      />
+                    )}
+                  </Stack>
                 </CollectionVolume>
-              </Stack>
-              {price !== "0" ? (
-                <img
-                  style={{ zIndex: 2 }}
-                  height="32"
-                  width="32"
-                  src="/static/icon-cart.png"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    handleBuyButtonClick();
-                  }}
-                />
-              ) : null}
+              )}
             </div>
           </div>
         </ListViewWrapper>
@@ -745,89 +1461,174 @@ const CartNftCard: React.FC<NFTCardProps> = ({
     );
   }
 
-  // Grid view
+  // Grid view (default)
   return display ? (
     <>
       <Box
-        style={{
+        sx={{
           border: `4px solid ${selected ? "green" : "transparent"}`,
           borderRadius: "25px",
+          position: "relative",
+          overflow: "visible",
+          width: size === "medium" ? "305px" : "100%",
+          ...sx,
         }}
       >
+        {rarity ? (
+          <RarityBadge rarity={getRarity.label}>
+            <span className="rank">
+              <DiamondIcon className="gem-icon" />
+              {padRarityRank(getRarity.rank)}
+            </span>
+            <span className="label">{getRarity.label}</span>
+          </RarityBadge>
+        ) : null}
+        {listing?.price && Number(listing.price) > 0 && (
+          <PriceTag isDark={isDarkTheme}>
+            <span>
+              {`${priceNormal || price} ${
+                priceNormal ? "VOI" : currencySymbol
+              }`}
+            </span>
+            {priceNormal && currencySymbol !== "VOI" && (
+              <Chip
+                className="chip"
+                size="small"
+                label={`${price} ${currencySymbol}`}
+              />
+            )}
+          </PriceTag>
+        )}
+        {isOwned && (
+          <Tooltip title="You own this NFT" arrow placement="right">
+            <OwnershipBadge
+              showDrip={showDrip && getDrips.length > 0}
+              isDark={isDarkTheme}
+            >
+              <AccountBalanceWalletIcon />
+            </OwnershipBadge>
+          </Tooltip>
+        )}
+        {showDrip && getDrips.length > 0 && (
+          <Tooltip
+            title={
+              <DripTooltipContent>
+                {getDrips.map((drip, index) => (
+                  <div key={index} className="drip-item">
+                    <span className="drip-amount">
+                      {formatter.format(drip.dripAmount)}
+                    </span>
+                    <span>{drip.symbol}/wk</span>
+                  </div>
+                ))}
+              </DripTooltipContent>
+            }
+            arrow
+            placement="right"
+          >
+            <DripBadge>
+              <DripIcon />
+            </DripBadge>
+          </Tooltip>
+        )}
+        {getHighestOffer && (
+          <HighestOfferBadge isDark={isDarkTheme}>
+            <CurrencyExchangeIcon className="offer-icon" />
+            <span>
+              {formatter.format(getHighestOffer.amount.toNumber())}{" "}
+              {currencySymbol}
+            </span>
+          </HighestOfferBadge>
+        )}
         <Box
           style={{
             cursor: "pointer",
-            width: size === "medium" ? "305px" : "100px",
-            height: size === "medium" ? "305px" : "100px",
+            width: size === "medium" ? "305px" : "100%",
+            height: size === "medium" ? "305px" : "100%",
             flexShrink: 0,
             borderRadius: "20px",
-            background: `linear-gradient(0deg, rgba(0, 0, 0, 0.50) 10.68%, rgba(0, 0, 0, 0.00) 46.61%), 
-              url(${url}), 
-              lightgray 50% / cover no-repeat`,
             backgroundSize: "cover",
             display: "flex",
             alignItems: "flex-end",
             justifyContent: "center",
+            position: "relative",
+            overflow: "hidden",
           }}
           onClick={onClick}
         >
-          {!imageOnly ? (
-            <Stack
-              direction="row"
-              spacing={2}
-              sx={{
-                alignItems: "center",
-                justifyContent: "space-between",
-                color: "#fff",
-                width: "90%",
-                height: "52px",
-                marginBottom: "27px",
+          <PixelatedImage
+            showNSFW={showNSFWContent}
+            isNSFW={isNSFW}
+            sx={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundImage: `url(${url})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              zIndex: 0,
+            }}
+          />
+          {isNSFW && !showNSFWContent && (
+            <NSFWOverlay
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowNSFWContent(true);
               }}
             >
-              <Stack gap={1}>
-                <CollectionName isDark={true}>{displayName}</CollectionName>
-                <CollectionVolume isDark={true}>
-                  {price !== "0" ? (
-                    <Stack
-                      direction="row"
-                      gap={1}
-                      sx={{ alignItems: "center" }}
-                    >
-                      <span>
-                        {`${priceNormal || price} ${
-                          priceNormal ? "VOI" : currencySymbol
-                        }`}
-                      </span>
-                      {priceNormal && currencySymbol !== "VOI" ? (
-                        <Chip
-                          sx={{
-                            background: "#fff",
-                            color: "#161717",
-                            border: "none",
-                            fontWeight: 500,
-                          }}
-                          label={`${price} ${currencySymbol}`}
-                        />
-                      ) : null}
-                    </Stack>
-                  ) : null}
-                </CollectionVolume>
-              </Stack>
-              {price !== "0" ? (
-                <img
-                  style={{ zIndex: 2 }}
-                  height="40"
-                  width="40"
-                  src="/static/icon-cart.png"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    handleBuyButtonClick();
+              <VisibilityIcon className="eye-icon" />
+              <div>
+                NSFW Content
+                <br />
+                Click to reveal
+              </div>
+            </NSFWOverlay>
+          )}
+          {!hideOverlay && (
+            <>
+              <Box
+                sx={{
+                  position: "absolute",
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  height: "90px",
+                  background: `linear-gradient(to top,
+                    rgba(0, 0, 0, 0.7) 0%,
+                    rgba(0, 0, 0, 0.4) 50%,
+                    rgba(0, 0, 0, 0) 100%)`,
+                  //backdropFilter: "blur(2px)",
+                  zIndex: 1,
+                }}
+              />
+              {!imageOnly && (
+                <Stack
+                  direction="row"
+                  spacing={2}
+                  sx={{
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    color: "#fff",
+                    width: "90%",
+                    height: "52px",
+                    marginBottom: "27px",
+                    position: "relative",
+                    zIndex: 2,
                   }}
-                />
-              ) : null}
-            </Stack>
-          ) : null}
+                >
+                  <Stack gap={1}>
+                    <CollectionName isDark={true}>{displayName}</CollectionName>
+                    <OwnerText>
+                      <PersonIcon className="person-icon" />
+                      {ownerName}
+                    </OwnerText>
+                  </Stack>
+                </Stack>
+              )}
+            </>
+          )}
         </Box>
       </Box>
       {activeAccount && openBuyModal && listing ? (
@@ -851,6 +1652,11 @@ const CartNftCard: React.FC<NFTCardProps> = ({
       ) : null}
     </>
   ) : null;
+};
+
+// Add this helper function near the top of the file
+const padRarityRank = (rank: number) => {
+  return rank.toString().padStart(3, "0");
 };
 
 export default CartNftCard;

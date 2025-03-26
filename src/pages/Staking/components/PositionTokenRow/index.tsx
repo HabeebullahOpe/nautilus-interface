@@ -22,6 +22,7 @@ import {
   Table,
   TableHead,
   TableBody,
+  Checkbox,
 } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import Skeleton from "@mui/material/Skeleton";
@@ -71,6 +72,9 @@ interface PositionTokenRowProps {
   arc72TokensLength: number;
   lastRowStyle: React.CSSProperties;
   cellStyle: React.CSSProperties;
+  selected: boolean;
+  onSelect: (nft: any) => void;
+  isSelectable?: boolean;
 }
 
 interface BlockProductionData {
@@ -330,6 +334,9 @@ const PositionTokenRow: React.FC<PositionTokenRowProps> = ({
   arc72TokensLength,
   lastRowStyle,
   cellStyle,
+  selected,
+  onSelect,
+  isSelectable = true,
 }) => {
   if (!nft.staking) return null;
   const { isDarkTheme } = useSelector((state: RootState) => state.theme);
@@ -433,7 +440,7 @@ const PositionTokenRow: React.FC<PositionTokenRowProps> = ({
           sk: new Uint8Array(0),
         }
       );
-      ci.setFee(5000);
+      ci.setFee(6000);
       const withdrawR2 = await ci.withdraw(
         Number(nft.tokenId),
         BigInt(withdrawAmount * 1e6) // Convert VOI to microVOI
@@ -644,26 +651,69 @@ const PositionTokenRow: React.FC<PositionTokenRowProps> = ({
     setIsDepositLoading(true);
     try {
       // Create payment transaction to app account
-      const suggestedParams = await algodClient.getTransactionParams().do();
-      const paymentTxn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
-        from: activeAccount.address,
-        to: nft.staking?.contractAddress || "",
-        amount: Math.floor(Number(amount) * 1e6), // Convert VOI to microVOI
-        suggestedParams,
-        note: new TextEncoder().encode(
-          `deposit ${amount} VOI to staking contract ${nft.contractId}`
-        ),
-      });
-      const stxns = await signTransactions([paymentTxn.toByte()]);
+
+      const ci = new CONTRACT(
+        Number(nft.contractId),
+        algodClient,
+        undefined,
+        {
+          name: "NautilusVoiStaking",
+          desc: "Nautilus Voi Staking Contract",
+          methods: [
+            {
+              name: "deposit",
+              args: [{ type: "uint64", name: "tokenId" }],
+              returns: { type: "uint64" },
+            },
+          ],
+          events: [],
+        },
+        {
+          addr: activeAccount.address,
+          sk: new Uint8Array(0),
+        }
+      );
+      ci.setFee(2000);
+      ci.setPaymentAmount(Math.floor(Number(amount) * 1e6));
+      const depositR = await ci.deposit(Number(nft.tokenId));
+      if (!depositR.success) {
+        console.error({ depositR });
+        throw new Error("deposit failed in simulate");
+      }
+      const stxns = await signTransactions(
+        depositR.txns.map(
+          (txn: string) => new Uint8Array(Buffer.from(txn, "base64"))
+        )
+      );
       const { txId } = await algodClient
         .sendRawTransaction(stxns as Uint8Array[])
         .do();
-
       await algosdk.waitForConfirmation(algodClient, txId, 4);
-      await refetch();
+      //await refetch(); // fix missing refetch
       toast.success("Successfully deposited funds");
       setIsDepositModalOpen(false);
       setAmount("");
+
+      // const suggestedParams = await algodClient.getTransactionParams().do();
+      // const paymentTxn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+      //   from: activeAccount.address,
+      //   to: nft.staking?.contractAddress || "",
+      //   amount: Math.floor(Number(amount) * 1e6), // Convert VOI to microVOI
+      //   suggestedParams,
+      //   note: new TextEncoder().encode(
+      //     `deposit ${amount} VOI to staking contract ${nft.contractId}`
+      //   ),
+      // });
+      // const stxns = await signTransactions([paymentTxn.toByte()]);
+      // const { txId } = await algodClient
+      //   .sendRawTransaction(stxns as Uint8Array[])
+      //   .do();
+
+      // await algosdk.waitForConfirmation(algodClient, txId, 4);
+      // await refetch();
+      // toast.success("Successfully deposited funds");
+      // setIsDepositModalOpen(false);
+      // setAmount("");
     } catch (error) {
       console.error("Error depositing:", error);
       toast.error(
@@ -763,80 +813,135 @@ const PositionTokenRow: React.FC<PositionTokenRowProps> = ({
   return (
     <>
       <TableRow
-        key={`${nft.contractId}-${nft.tokenId}`}
-        style={index === arc72TokensLength - 1 ? lastRowStyle : undefined}
+        hover
+        role="checkbox"
+        aria-checked={selected}
+        tabIndex={-1}
+        selected={selected}
+        onClick={() => isSelectable && onSelect(nft)}
+        sx={{
+          cursor: isSelectable ? 'pointer' : 'default',
+          '&.Mui-selected': {
+            backgroundColor: isDarkTheme 
+              ? 'rgba(153, 51, 255, 0.08)' 
+              : 'rgba(153, 51, 255, 0.08)',
+          },
+          '&.Mui-selected:hover': {
+            backgroundColor: isDarkTheme 
+              ? 'rgba(153, 51, 255, 0.12)' 
+              : 'rgba(153, 51, 255, 0.12)',
+          },
+        }}
       >
         {isLoading ? (
-          <TableCell style={cellStyleWithColor} colSpan={9} align="right">
+          <TableCell style={cellStyleWithColor} colSpan={10} align="right">
             <Skeleton variant="text" />
           </TableCell>
         ) : (
           <>
-            <TableCell style={cellStyleWithColor} align="right">
+            <TableCell padding="checkbox" style={cellStyleWithColor}>
+              <Checkbox
+                checked={selected}
+                onChange={(event) => {
+                  event.stopPropagation();
+                  onSelect(nft);
+                }}
+                onClick={(event) => {
+                  event.stopPropagation();
+                }}
+                sx={{
+                  color: isDarkTheme ? 'white' : undefined,
+                  '&.Mui-checked': {
+                    color: '#9933ff',
+                  },
+                }}
+              />
+            </TableCell>
+            <TableCell 
+              style={{
+                ...cellStyleWithColor,
+                color: isDarkTheme ? "white" : "black",
+                fontWeight: 100,
+              }}
+              align="right"
+            >
               <a
                 href={`https://block.voi.network/explorer/application/${data?.contractId}/global-state`}
                 target="_blank"
-                style={{
-                  color: isDarkTheme ? "white" : "inherit",
-                  fontWeight: 100,
-                }}
                 rel="noopener noreferrer"
+                style={{ color: "inherit" }}
+                onClick={(e) => e.stopPropagation()}
               >
                 {data?.contractId}
               </a>
               <ContentCopyIcon
                 style={{
-                  color: isDarkTheme ? "white" : "inherit",
                   cursor: "pointer",
                   marginLeft: "5px",
                   fontSize: "16px",
+                  color: "inherit",
                 }}
-                onClick={() => copyToClipboard(data?.contractId, "Account ID")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  copyToClipboard(data?.contractId, "Account ID");
+                }}
               />
             </TableCell>
-            <TableCell style={cellStyleWithColor} align="center">
+            <TableCell 
+              style={{
+                ...cellStyleWithColor,
+                color: isDarkTheme ? "white" : "black",
+                fontWeight: 100,
+              }}
+              align="right"
+            >
               <a
                 href={`https://block.voi.network/explorer/account/${data?.contractAddress}/transactions`}
                 target="_blank"
-                style={{
-                  color: isDarkTheme ? "white" : "inherit",
-                  fontWeight: 100,
-                }}
                 rel="noopener noreferrer"
+                style={{ color: "inherit" }}
+                onClick={(e) => e.stopPropagation()}
               >
                 {data?.contractAddress.slice(0, 6)}...
                 {data?.contractAddress.slice(-6)}
               </a>
               <ContentCopyIcon
                 style={{
-                  color: isDarkTheme ? "white" : "inherit",
                   cursor: "pointer",
                   marginLeft: "5px",
                   fontSize: "16px",
+                  color: "inherit",
                 }}
-                onClick={() =>
-                  copyToClipboard(data?.contractAddress, "Account Address")
-                }
+                onClick={(e) => {
+                  e.stopPropagation();
+                  copyToClipboard(data?.contractAddress, "Account Address");
+                }}
               />
             </TableCell>
             <TableCell
               style={{
                 ...cellStyleWithColor,
-                color: isDarkTheme ? "white" : "inherit",
+                color: isDarkTheme ? "white" : "black",
                 fontWeight: 100,
-                cursor: "pointer",
               }}
-              align="center"
-              onClick={() => setIsDelegateModalOpen(true)}
+              align="right"
             >
-              {data.global_delegate.slice(0, 6)}...
-              {data.global_delegate.slice(-6)}
+              <a
+                href={`https://block.voi.network/explorer/account/${data?.contractAddress}/transactions`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "inherit" }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {data.global_delegate.slice(0, 6)}...
+                {data.global_delegate.slice(-6)}
+              </a>
               <ContentCopyIcon
                 style={{
-                  color: isDarkTheme ? "white" : "inherit",
                   cursor: "pointer",
                   marginLeft: "5px",
                   fontSize: "16px",
+                  color: "inherit",
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -847,7 +952,7 @@ const PositionTokenRow: React.FC<PositionTokenRowProps> = ({
             <TableCell
               style={{
                 ...cellStyleWithColor,
-                color: isDarkTheme ? "white" : "inherit",
+                color: isDarkTheme ? "white" : "black",
                 fontWeight: 100,
               }}
               align="right"
@@ -882,7 +987,7 @@ const PositionTokenRow: React.FC<PositionTokenRowProps> = ({
             <TableCell
               style={{
                 ...cellStyleWithColor,
-                color: isDarkTheme ? "white" : "inherit",
+                color: isDarkTheme ? "white" : "black",
                 fontWeight: 100,
               }}
               align="right"
@@ -892,14 +997,21 @@ const PositionTokenRow: React.FC<PositionTokenRowProps> = ({
             <TableCell
               style={{
                 ...cellStyleWithColor,
-                color: isDarkTheme ? "white" : "inherit",
+                color: isDarkTheme ? "white" : "black",
                 fontWeight: 100,
               }}
               align="right"
             >
               {renderExpirationCell()}
             </TableCell>
-            <TableCell style={cellStyleWithColor} align="right">
+            <TableCell 
+              style={{
+                ...cellStyleWithColor,
+                color: isDarkTheme ? "white" : "black",
+                fontWeight: 100,
+              }}
+              align="right"
+            >
               <Typography
                 variant="body2"
                 sx={{
@@ -910,7 +1022,14 @@ const PositionTokenRow: React.FC<PositionTokenRowProps> = ({
                 {blocksData?.getProposerBlocks(data?.contractAddress)}
               </Typography>
             </TableCell>
-            <TableCell style={cellStyleWithColor} align="right">
+            <TableCell 
+              style={{
+                ...cellStyleWithColor,
+                color: isDarkTheme ? "white" : "black",
+                fontWeight: 100,
+              }}
+              align="right"
+            >
               <Box
                 sx={{
                   display: "flex",
@@ -953,8 +1072,14 @@ const PositionTokenRow: React.FC<PositionTokenRowProps> = ({
                 </Typography>
               </Box>
             </TableCell>
-
-            <TableCell style={cellStyleWithColor} align="right">
+            <TableCell 
+              style={{
+                ...cellStyleWithColor,
+                color: isDarkTheme ? "white" : "black",
+                fontWeight: 100,
+              }}
+              align="right"
+            >
               <Button
                 id="actions-button"
                 aria-controls={Boolean(anchorEl) ? "actions-menu" : undefined}

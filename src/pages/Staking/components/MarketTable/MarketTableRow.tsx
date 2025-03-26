@@ -9,7 +9,7 @@ import {
   Skeleton,
 } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import moment from "moment";
 import { toast } from "react-toastify";
 import VIAIcon from "/src/static/crypto-icons/voi/6779767.svg";
@@ -29,6 +29,7 @@ const MarketTableRow: React.FC<MarketTableRowProps> = ({
   isDarkTheme,
   onOpenModal,
 }) => {
+  const navigate = useNavigate();
   const theme = useTheme();
   const { balance, isLoading, error } = useAccountBalance(
     algosdk.getApplicationAddress(Number(item.token.tokenId))
@@ -70,7 +71,9 @@ const MarketTableRow: React.FC<MarketTableRowProps> = ({
           width={80}
           height={20}
           sx={{
-            bgcolor: isDarkTheme ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+            bgcolor: isDarkTheme
+              ? "rgba(255, 255, 255, 0.1)"
+              : "rgba(0, 0, 0, 0.1)",
           }}
         />
       );
@@ -82,8 +85,8 @@ const MarketTableRow: React.FC<MarketTableRowProps> = ({
           <Typography
             variant="caption"
             sx={{
-              color: 'error.main',
-              fontSize: '0.75rem',
+              color: "error.main",
+              fontSize: "0.75rem",
             }}
           >
             {formatBalance(null)}
@@ -96,7 +99,7 @@ const MarketTableRow: React.FC<MarketTableRowProps> = ({
       <Typography
         variant="body2"
         sx={{
-          fontSize: '0.875rem',
+          fontSize: "0.875rem",
         }}
       >
         {formatBalance(balance)}
@@ -112,7 +115,9 @@ const MarketTableRow: React.FC<MarketTableRowProps> = ({
           width={60}
           height={20}
           sx={{
-            bgcolor: isDarkTheme ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+            bgcolor: isDarkTheme
+              ? "rgba(255, 255, 255, 0.1)"
+              : "rgba(0, 0, 0, 0.1)",
           }}
         />
       );
@@ -145,7 +150,7 @@ const MarketTableRow: React.FC<MarketTableRowProps> = ({
 
   return (
     <TableRow>
-      <TableCell style={cellStyle} align="center">
+      {/*<TableCell style={cellStyle} align="center">
         <Link
           to={`/collection/${item.token.contractId}/token/${item.token.tokenId}`}
         >
@@ -162,7 +167,7 @@ const MarketTableRow: React.FC<MarketTableRowProps> = ({
             copyToClipboard(item.token.contractId, "Account Address")
           }
         />
-      </TableCell>
+      </TableCell>*/}
       <TableCell style={cellStyle} align="center">
         <a
           href={`https://block.voi.network/explorer/account/${item.contractAddress}/transactions`}
@@ -214,7 +219,11 @@ const MarketTableRow: React.FC<MarketTableRowProps> = ({
           }}
           variant={isDarkTheme ? "outlined" : "contained"}
           size="small"
-          onClick={handleOpenModal}
+          onClick={() => {
+            navigate(
+              `/collection/${item.token.contractId}/token/${item.token.tokenId}`
+            );
+          }}
         >
           <img src={VIAIcon} style={{ height: "12px" }} alt="VOI Icon" />
           <Typography

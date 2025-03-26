@@ -4,26 +4,27 @@ export const navlinks = [
     href: "/listing",
   },
   {
+    label: "Offers",
+    href: "/offers",
+  },
+  {
     label: "Collections",
     href: "/collection",
   },
   {
-    label: "Staking",
-    href: "/staking",
+    label: "Activity",
+    href: "/sales-activity",
   },
   {
     label: "Launchpad",
     href: "/create-arc200",
-  },
-  {
-    label: "Community Chest",
-    href: "/community-chest",
   },
 ];
 
 export const linkLabels: { [key: string]: string } = {
   "/listings": "Listings",
   "/collection": "Collections",
+  "/analytics": "Analytics",
   "/staking": "Staking",
   "/create-arc200": "Launchpad",
   "/community-chest": "Community Chest",

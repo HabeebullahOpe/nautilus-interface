@@ -1,7 +1,7 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import { NodeGlobalsPolyfillPlugin } from '@esbuild-plugins/node-globals-polyfill';
-import path from "path"
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import { NodeGlobalsPolyfillPlugin } from "@esbuild-plugins/node-globals-polyfill";
+import path from "path";
 
 export default defineConfig({
   plugins: [react()],
@@ -11,23 +11,23 @@ export default defineConfig({
     },
   },
   define: {
-    'process.env': {},
-    global: 'globalThis',
+    "process.env": {},
+    global: "globalThis",
   },
   optimizeDeps: {
     esbuildOptions: {
       define: {
-        global: 'globalThis',  // Polyfill global with globalThis
+        global: "globalThis", // Polyfill global with globalThis
       },
       plugins: [
         NodeGlobalsPolyfillPlugin({
-          buffer: true
-        })
-      ]
-    }
-  }
-//   server: {
-//     historyApiFallback: true, // Handle client-side routing
-//   },
-  // Add any other configurations you need here
+          buffer: true,
+        }),
+      ],
+    },
+    include: [
+      //"@mui/material/Grid2",
+      "@emotion/styled",
+    ],
+  },
 });
