@@ -40,8 +40,13 @@ export const navlinks = [
     label: "Wrapped Voi",
     href: "/community-chest",
     type: "sub"
-  }
-];
+  },
+  {
+    label: 'Vibe Arcade',
+    href: '/tools',
+  },
+] as const;
+
 
 export const linkLabels: { [key: string]: string } = {
   "/listings": "Listings",
