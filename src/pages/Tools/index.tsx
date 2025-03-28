@@ -3,6 +3,7 @@ import React from "react";
 import Calculator from "@/components/Tools/Calculator";
 import DiceRoll from "@/components/Tools/DiceRoll";
 import HigherLower from "@/components/Tools/HigherLower";
+import NameInspector from "@/components/Tools/NameInspector";
 import styled from "styled-components";
 
 const toolsConfig = [
@@ -91,6 +92,44 @@ const toolsConfig = [
       >
         <path
           d="M8 20L16 12L24 20"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <rect
+          x="4"
+          y="4"
+          width="24"
+          height="24"
+          rx="2"
+          stroke="currentColor"
+          strokeWidth="2"
+        />
+      </svg>
+    ),
+  },
+  {
+    id: "nameinspector",
+    name: "Name Inspector",
+    component: NameInspector,
+    icon: (
+      <svg
+        width="32"
+        height="32"
+        viewBox="0 0 32 32"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M13 15L8 20L13 25"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M19 15L24 20L19 25"
           stroke="currentColor"
           strokeWidth="2"
           strokeLinecap="round"

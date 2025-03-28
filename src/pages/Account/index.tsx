@@ -2861,15 +2861,22 @@ export const Account: React.FC = () => {
       const tokenIds: string[] = response.data.tokens.map((token: any) =>
         String(token.tokenId)
       );
+      console.log({ tokenIds });
       // TODO request in batches of 50
       const profileResponse = await axios.get<EnvoiProfileResponse>(
         `https://api.envoi.sh/api/token/${tokenIds.slice(0, 50).join(",")}`
       );
+      console.log({ profileResponse });
       // Update to map the names from the results
       const availableNames = profileResponse.data.results.filter(
         (result: any) => !!result.name
       );
-      setAvailableNames(availableNames);
+      setAvailableNames(
+        availableNames.map((profile: any) => ({
+          ...profile,
+          address: activeAccount?.address,
+        }))
+      );
     } catch (error) {
       console.error("Error fetching names:", error);
       toast.error("Failed to load available names");
