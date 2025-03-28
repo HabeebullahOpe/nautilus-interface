@@ -5,6 +5,7 @@ import DiceRoll from "@/components/Tools/DiceRoll";
 import HigherLower from "@/components/Tools/HigherLower";
 import NameInspector from "@/components/Tools/NameInspector";
 import styled from "styled-components";
+import RoyaltyChecker from '../../components/Tools/RoyaltyChecker';
 
 const toolsConfig = [
   {
@@ -143,6 +144,28 @@ const toolsConfig = [
           rx="2"
           stroke="currentColor"
           strokeWidth="2"
+        />
+      </svg>
+    ),
+  },
+  {
+    id: "royaltychecker",
+    name: "Royalty Checker",
+    component: RoyaltyChecker,
+    icon: (
+      <svg
+        width="32"
+        height="32"
+        viewBox="0 0 32 32"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M16 4L19.2411 12.7589L28 16L19.2411 19.2411L16 28L12.7589 19.2411L4 16L12.7589 12.7589L16 4Z"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
         />
       </svg>
     ),
