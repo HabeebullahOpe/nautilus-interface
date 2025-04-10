@@ -704,10 +704,10 @@ const CONTRACT_OPTIONS: ContractOption[] = [
     description: "Weekly NFT prizes for holders...",
     iconPath: "M19 19H5V5h14m0-2H5c-1.1...",
     tokenomics: {
-      holder: 0.2,
-      drawing: 0.5,
+      holder: 0.32,
+      drawing: 0.6,
       lpHolder: 0,
-      treasury: 0.22,
+      treasury: 0,
       team: 0,
       node: 0.05,
       other: 0.03,
@@ -1264,15 +1264,15 @@ const NFT_RELEASES: NFTRelease[] = [
     date: "2025-03-21 00:00:00 UTC",
     name: "AI Voiager #66",
     url: "https://nautilus.sh/#/collection/398796/token/66",
-    winnerAddress: "",
-    txid: "",
+    winnerAddress: "MUTS5EI5IYSNNM2QDLNPBJ2NNRSRRMUC4S6OTCXM3JZMHUAJOSJT6YUKRA",
+    txid: "Y76JCTFIVIDZNSGBDTBXMEMW5O47FN7Z6O6Y4K7FTSMVJXWJMLBA",
   },
   {
     date: "2025-03-28 00:00:00 UTC",
     name: "CandyMons90",
     url: "https://nautilus.sh/#/collection/587497/token/90",
-    winnerAddress: "",
-    txid: "",
+    winnerAddress: "VOIUK3B5KQXVMVMYMLZOELHNABRKV27BP3CZRIK2ZCF7HEFP4F6APX76NM",
+    txid: "FXAIOAH4RQUECYKXJNVSGCWWPP6RDJR2DLWZDR4UFSN3QAE7BH2Q",
   },
   {
     date: "2025-04-04 00:00:00 UTC",
@@ -4325,7 +4325,7 @@ const CommunityChest: React.FC<CommunityChestProps> = ({
                     </Box>
                   </Label>
                   <NFTImage
-                    src="https://prod.cdn.highforge.io/m/398796/66.jpeg"
+                    src="https://prod.cdn.highforge.io/m/398078/24.webp"
                     alt="Weekly NFT Prize"
                     $isDarkTheme={isDarkTheme}
                   />
@@ -4337,7 +4337,7 @@ const CommunityChest: React.FC<CommunityChestProps> = ({
                       mb: 1,
                     }}
                   >
-                    AI Voiager #66"
+                    Bored Crepe #24
                   </Typography>
                   <Typography
                     variant="body2"
@@ -4377,7 +4377,7 @@ const CommunityChest: React.FC<CommunityChestProps> = ({
                         fontWeight: "bold",
                       }}
                     >
-                      Mar 20, 2025
+                      Apr 3, 2025
                     </Typography>
                   </Box>
                 </NFTPrizeCard>
