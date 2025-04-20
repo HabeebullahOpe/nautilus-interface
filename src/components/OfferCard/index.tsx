@@ -10,6 +10,7 @@ import { getAlgorandClients } from "@/wallets";
 import { abi, CONTRACT } from "ulujs";
 import algosdk from "algosdk";
 import BigNumber from "bignumber.js";
+import { CancelOfferDialog } from "../modals/CancelOfferDialog";
 
 const OfferCardWrapper = styled(Card)<{ $isDark?: boolean }>`
   &.MuiCard-root {
@@ -70,11 +71,16 @@ interface OfferCardProps {
   onCancel?: (offerId: number) => void;
 }
 
-const OfferCard: React.FC<OfferCardProps> = ({ offer, isDarkTheme, onCancel }) => {
+const OfferCard: React.FC<OfferCardProps> = ({
+  offer,
+  isDarkTheme,
+  onCancel,
+}) => {
   const [tokenInfo, setTokenInfo] = React.useState<TokenInfo>();
   const [loading, setLoading] = React.useState(true);
   const [manager, setManager] = React.useState<string>("");
   const { activeAccount, signTransactions } = useWallet();
+  const [dialogOpen, setDialogOpen] = React.useState(false);
 
   React.useEffect(() => {
     // Fetch manager address
@@ -82,10 +88,16 @@ const OfferCard: React.FC<OfferCardProps> = ({ offer, isDarkTheme, onCancel }) =
       try {
         const { algodClient, indexerClient } = getAlgorandClients();
         const ctcInfoMP213 = 8329112; // mp213 offers
-        const ci = new CONTRACT(ctcInfoMP213, algodClient, indexerClient, abi.mp, {
-          addr: algosdk.getApplicationAddress(ctcInfoMP213),
-          sk: new Uint8Array(0),
-        });
+        const ci = new CONTRACT(
+          ctcInfoMP213,
+          algodClient,
+          indexerClient,
+          abi.mp,
+          {
+            addr: algosdk.getApplicationAddress(ctcInfoMP213),
+            sk: new Uint8Array(0),
+          }
+        );
         const managerResponse = await ci.manager();
         setManager(managerResponse.returnValue);
       } catch (error) {
@@ -184,14 +196,17 @@ const OfferCard: React.FC<OfferCardProps> = ({ offer, isDarkTheme, onCancel }) =
       };
 
       const buildN = [];
-      
+
       // Delete listing transaction
-      const txnO = (await builder.mp.a_offer_deleteListing(BigInt(offerId)))?.obj;
+      const txnO = (await builder.mp.a_offer_deleteListing(BigInt(offerId)))
+        ?.obj;
       buildN.push({
         ...txnO,
         note: new TextEncoder().encode(`a_offer_deleteListing:${offerId}`),
         foreignApps: [ctcInfoNV, offer.collectionId],
-        accounts: ["RTKWX3FTDNNIHMAWHK5SDPKH3VRPPW7OS5ZLWN6RFZODF7E22YOBK2OGPE"],
+        accounts: [
+          "RTKWX3FTDNNIHMAWHK5SDPKH3VRPPW7OS5ZLWN6RFZODF7E22YOBK2OGPE",
+        ],
       });
 
       // Withdraw transaction
@@ -209,13 +224,13 @@ const OfferCard: React.FC<OfferCardProps> = ({ offer, isDarkTheme, onCancel }) =
         abi.custom,
         { addr: offerer, sk: new Uint8Array(0) }
       );
-      
+
       ci.setEnableGroupResourceSharing(true);
       ci.setExtraTxns(buildN);
       ci.setFee(3000);
-      
+
       const customR = await ci.custom();
-      
+
       if (simulate && customR.success) {
         if (onCancel) onCancel(offerId);
         toast.success("Offer cancelled successfully!");
@@ -230,19 +245,27 @@ const OfferCard: React.FC<OfferCardProps> = ({ offer, isDarkTheme, onCancel }) =
       const stxns = await signTransactions(
         customR.txns.map((el: any) => new Uint8Array(Buffer.from(el, "base64")))
       );
-      
+
       const txn = await algodClient
         .sendRawTransaction(stxns as Uint8Array[])
         .do();
-      
+
       await algosdk.waitForConfirmation(algodClient, txn.txId, 4);
-      
+
       if (onCancel) onCancel(offerId);
       toast.success("Offer cancelled successfully!");
     } catch (e: any) {
       console.error("Cancel offer error:", e);
       toast.error(e.message || "Failed to cancel offer");
     }
+  };
+
+  const handleCancelClick = () => {
+    setDialogOpen(true);
+  };
+
+  const handleConfirmCancel = () => {
+    handleCancelOffer(offer.mpListingId, offer.offerer, offer.price, false);
   };
 
   const handleViewToken = () => {
@@ -257,27 +280,33 @@ const OfferCard: React.FC<OfferCardProps> = ({ offer, isDarkTheme, onCancel }) =
       <CardContent>
         {loading ? (
           <>
-            <Skeleton 
-              variant="rectangular" 
-              width="100%" 
-              height={200} 
-              sx={{ bgcolor: isDarkTheme ? 'grey.800' : 'grey.200', marginBottom: '1rem' }} 
+            <Skeleton
+              variant="rectangular"
+              width="100%"
+              height={200}
+              sx={{
+                bgcolor: isDarkTheme ? "grey.800" : "grey.200",
+                marginBottom: "1rem",
+              }}
             />
-            <Skeleton 
-              variant="text" 
-              width="60%" 
-              sx={{ bgcolor: isDarkTheme ? 'grey.800' : 'grey.200' }} 
+            <Skeleton
+              variant="text"
+              width="60%"
+              sx={{ bgcolor: isDarkTheme ? "grey.800" : "grey.200" }}
             />
-            <Skeleton 
-              variant="text" 
-              width="40%" 
-              sx={{ bgcolor: isDarkTheme ? 'grey.800' : 'grey.200' }} 
+            <Skeleton
+              variant="text"
+              width="40%"
+              sx={{ bgcolor: isDarkTheme ? "grey.800" : "grey.200" }}
             />
-            <Skeleton 
-              variant="rectangular" 
-              width="100%" 
-              height={36} 
-              sx={{ bgcolor: isDarkTheme ? 'grey.800' : 'grey.200', marginTop: '1rem' }} 
+            <Skeleton
+              variant="rectangular"
+              width="100%"
+              height={36}
+              sx={{
+                bgcolor: isDarkTheme ? "grey.800" : "grey.200",
+                marginTop: "1rem",
+              }}
             />
           </>
         ) : (
@@ -309,26 +338,19 @@ const OfferCard: React.FC<OfferCardProps> = ({ offer, isDarkTheme, onCancel }) =
             {/*<StyledTypography $isDark={isDarkTheme}>
               Transaction ID: {shortenAddress(offer.transactionId)}
             </StyledTypography>*/}
-            
+
             {(offer.offerer === activeAccount?.address ||
               manager === activeAccount?.address) && (
               <StyledButton
-                variant="contained"
+                variant="outlined"
                 $isDark={isDarkTheme}
-                onClick={() =>
-                  handleCancelOffer(
-                    offer.mpListingId,
-                    offer.offerer,
-                    offer.price,
-                    false
-                  )
-                }
+                onClick={handleCancelClick}
                 disabled={!activeAccount}
               >
                 Cancel Offer
               </StyledButton>
             )}
-            
+
             <StyledButton
               variant="outlined"
               $isDark={isDarkTheme}
@@ -340,6 +362,11 @@ const OfferCard: React.FC<OfferCardProps> = ({ offer, isDarkTheme, onCancel }) =
           </>
         )}
       </CardContent>
+      <CancelOfferDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        onConfirm={handleConfirmCancel}
+      />
     </OfferCardWrapper>
   );
 };
