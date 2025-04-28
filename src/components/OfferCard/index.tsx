@@ -346,6 +346,7 @@ const OfferCard: React.FC<OfferCardProps> = ({
                 $isDark={isDarkTheme}
                 onClick={handleCancelClick}
                 disabled={!activeAccount}
+                fullWidth
               >
                 Cancel Offer
               </StyledButton>
