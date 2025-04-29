@@ -2,7 +2,6 @@ import React from "react";
 import { Card, CardContent, Typography, Button, Skeleton } from "@mui/material";
 import styled from "styled-components";
 import { formatAmount } from "../../utils/format";
-import { shortenAddress } from "../../utils/string";
 import { NFT_NAVIGATOR_API } from "@/config/arc72-idx";
 import { toast } from "react-toastify";
 import { useWallet } from "@txnlab/use-wallet-react";
@@ -49,7 +48,9 @@ const StyledButton = styled(Button)<{ $isDark?: boolean }>`
 `;
 
 interface Offer {
-  mpListingId: number;
+  mpListingId?: number;
+  listingId?: number;
+  id?: number;
   transactionId: string;
   tokenId: string;
   price: number;
@@ -81,13 +82,32 @@ const OfferCard: React.FC<OfferCardProps> = ({
   const [manager, setManager] = React.useState<string>("");
   const { activeAccount, signTransactions } = useWallet();
   const [dialogOpen, setDialogOpen] = React.useState(false);
+  const [isCancelling, setIsCancelling] = React.useState(false);
+
+  // Debug API response structure
+  React.useEffect(() => {
+    console.log("Offer object structure:", {
+      mpListingId: offer.mpListingId,
+      listingId: offer.listingId,
+      id: offer.id,
+    });
+  }, [offer]);
+
+  const getOfferId = (): number => {
+    const offerId = offer.mpListingId || offer.listingId || offer.id;
+    if (!offerId) {
+      console.error("No valid offer ID found in:", offer);
+      toast.error("Invalid offer format");
+      throw new Error("Invalid offer ID");
+    }
+    return offerId;
+  };
 
   React.useEffect(() => {
-    // Fetch manager address
     const fetchManager = async () => {
       try {
         const { algodClient, indexerClient } = getAlgorandClients();
-        const ctcInfoMP213 = 8329112; // mp213 offers
+        const ctcInfoMP213 = 8329112;
         const ci = new CONTRACT(
           ctcInfoMP213,
           algodClient,
@@ -110,6 +130,7 @@ const OfferCard: React.FC<OfferCardProps> = ({
 
   React.useEffect(() => {
     if (!offer.collectionId || !offer.tokenId || tokenInfo) return;
+
     const fetchTokenInfo = async () => {
       setLoading(true);
       try {
@@ -130,30 +151,27 @@ const OfferCard: React.FC<OfferCardProps> = ({
         setLoading(false);
       }
     };
+
     fetchTokenInfo();
   }, [offer.collectionId, offer.tokenId]);
 
   const handleCancelOffer = async (
-    offerId: number,
     offerer: string,
     offerAmount: number,
     simulate?: boolean
   ) => {
     try {
-      if (!activeAccount) {
-        toast.info("Please connect wallet!");
-        return;
-      }
+      setIsCancelling(true);
+      const offerId = getOfferId();
 
       const feeAmountBI = BigInt(
         new BigNumber(offerAmount).multipliedBy(0.1).toFixed(0)
       );
-      const offerAmountBI = BigInt(offerAmount);
-      const totalAmount = offerAmountBI + feeAmountBI;
+      const totalAmount = BigInt(offerAmount) + feeAmountBI;
 
       const { algodClient, indexerClient } = getAlgorandClients();
-      const ctcInfoMP213 = 8329112; // mp213 offers
-      const ctcInfoNV = 8324600; // Nautilus Voi NV
+      const ctcInfoMP213 = 8329112;
+      const ctcInfoNV = 8324600;
 
       const builder = {
         arc200: new CONTRACT(
@@ -161,10 +179,7 @@ const OfferCard: React.FC<OfferCardProps> = ({
           algodClient,
           indexerClient,
           abi.nt200,
-          {
-            addr: offerer,
-            sk: new Uint8Array(0),
-          },
+          { addr: offerer, sk: new Uint8Array(0) },
           true,
           false,
           true
@@ -185,38 +200,28 @@ const OfferCard: React.FC<OfferCardProps> = ({
             ],
             events: [],
           },
-          {
-            addr: offerer,
-            sk: new Uint8Array(0),
-          },
+          { addr: offerer, sk: new Uint8Array(0) },
           true,
           false,
           true
         ),
       };
 
-      const buildN = [];
+      const buildN = [
+        {
+          ...(await builder.mp.a_offer_deleteListing(BigInt(offerId)))?.obj,
+          note: new TextEncoder().encode(`a_offer_deleteListing:${offerId}`),
+          foreignApps: [ctcInfoNV, offer.collectionId],
+          accounts: [
+            "RTKWX3FTDNNIHMAWHK5SDPKH3VRPPW7OS5ZLWN6RFZODF7E22YOBK2OGPE",
+          ],
+        },
+        {
+          ...(await builder.arc200.withdraw(totalAmount))?.obj,
+          note: new TextEncoder().encode(`withdraw:${totalAmount}`),
+        },
+      ];
 
-      // Delete listing transaction
-      const txnO = (await builder.mp.a_offer_deleteListing(BigInt(offerId)))
-        ?.obj;
-      buildN.push({
-        ...txnO,
-        note: new TextEncoder().encode(`a_offer_deleteListing:${offerId}`),
-        foreignApps: [ctcInfoNV, offer.collectionId],
-        accounts: [
-          "RTKWX3FTDNNIHMAWHK5SDPKH3VRPPW7OS5ZLWN6RFZODF7E22YOBK2OGPE",
-        ],
-      });
-
-      // Withdraw transaction
-      const withdrawTxn = (await builder.arc200.withdraw(totalAmount))?.obj;
-      buildN.push({
-        ...withdrawTxn,
-        note: new TextEncoder().encode(`withdraw:${totalAmount}`),
-      });
-
-      // Create and send transaction group
       const ci = new CONTRACT(
         ctcInfoMP213,
         algodClient,
@@ -232,14 +237,13 @@ const OfferCard: React.FC<OfferCardProps> = ({
       const customR = await ci.custom();
 
       if (simulate && customR.success) {
-        if (onCancel) onCancel(offerId);
+        onCancel?.(offerId);
         toast.success("Offer cancelled successfully!");
         return;
       }
 
       if (!customR.success) {
-        toast.error("Offer cancellation failed!", customR.error);
-        return;
+        throw new Error(customR.error || "Offer cancellation failed");
       }
 
       const stxns = await signTransactions(
@@ -251,21 +255,27 @@ const OfferCard: React.FC<OfferCardProps> = ({
         .do();
 
       await algosdk.waitForConfirmation(algodClient, txn.txId, 4);
-
-      if (onCancel) onCancel(offerId);
+      onCancel?.(offerId);
       toast.success("Offer cancelled successfully!");
     } catch (e: any) {
       console.error("Cancel offer error:", e);
       toast.error(e.message || "Failed to cancel offer");
+    } finally {
+      setIsCancelling(false);
     }
   };
 
   const handleCancelClick = () => {
-    setDialogOpen(true);
+    try {
+      getOfferId(); // Verify ID exists before showing dialog
+      setDialogOpen(true);
+    } catch (error) {
+      // Error already handled in getOfferId
+    }
   };
 
   const handleConfirmCancel = () => {
-    handleCancelOffer(offer.mpListingId, offer.offerer, offer.price, false);
+    handleCancelOffer(offer.offerer, offer.price, false);
   };
 
   const handleViewToken = () => {
@@ -323,21 +333,12 @@ const OfferCard: React.FC<OfferCardProps> = ({
                 alt={tokenInfo.name || "Token"}
               />
             )}
-            {/*<StyledTypography variant="h6" $isDark={isDarkTheme}>
-              Token ID: {offer.tokenId}
-            </StyledTypography>*/}
             <StyledTypography $isDark={isDarkTheme}>
               Offer: {formatAmount(offer.price)} VOI
             </StyledTypography>
-            {/*<StyledTypography $isDark={isDarkTheme}>
-              Collection ID: {offer.collectionId}
-            </StyledTypography>*/}
             <StyledTypography $isDark={isDarkTheme}>
               Created: {new Date(offer.createTimestamp * 1000).toLocaleString()}
             </StyledTypography>
-            {/*<StyledTypography $isDark={isDarkTheme}>
-              Transaction ID: {shortenAddress(offer.transactionId)}
-            </StyledTypography>*/}
 
             {(offer.offerer === activeAccount?.address ||
               manager === activeAccount?.address) && (
@@ -345,10 +346,10 @@ const OfferCard: React.FC<OfferCardProps> = ({
                 variant="outlined"
                 $isDark={isDarkTheme}
                 onClick={handleCancelClick}
-                disabled={!activeAccount}
+                disabled={!activeAccount || isCancelling}
                 fullWidth
               >
-                Cancel Offer
+                {isCancelling ? "Cancelling..." : "Cancel Offer"}
               </StyledButton>
             )}
 
@@ -363,10 +364,12 @@ const OfferCard: React.FC<OfferCardProps> = ({
           </>
         )}
       </CardContent>
+
       <CancelOfferDialog
         open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
+        onClose={() => !isCancelling && setDialogOpen(false)}
         onConfirm={handleConfirmCancel}
+        disabled={isCancelling}
       />
     </OfferCardWrapper>
   );
